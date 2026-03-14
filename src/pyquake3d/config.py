@@ -66,7 +66,7 @@ def readPara(data_dir):
     Para['Rock density']=float(Para0['Rock density'])
     Para['InputHetoparamter']=Para0['InputHetoparamter']=='True'
     Para['Inputparamter file']=Para0['Inputparamter file']
-    Para['Shearing zone width']=float(Para0['Shearing zone width'])
+    Para['Shear zone width']=float(Para0['Shear zone width'])
 
     try:
         Para['If Coupledthermal']=Para0['If Coupledthermal']=='True'
