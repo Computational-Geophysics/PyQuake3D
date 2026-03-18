@@ -17,7 +17,7 @@ from collections import deque
 from scipy.ndimage import gaussian_filter1d
 import pyquake3d.Hmatrix as Hmat
 import joblib
-import pyquake3d.config
+import pyquake3d.config as config
 from pyquake3d.config import comm, rank, size
 from mpi4py import MPI
 import pyvista as pv
