@@ -108,7 +108,7 @@ mpirun -n 10 python -m pyquake3d.main_mpi -g examples/Lab-model/lab.msh -p examp
 ## For MPI GPU version, use the following command:
 python -g --inputgeo <input_geometry_file> -p --inputpara <input_parameter_file>
 ```bash
-mpirun -n <N> python -m pyquake3d.main_mpi_gpu -g <input_geometry_file> -p <input_parameter_file>
+mpirun -n <N> python -m pyquake3d.main_gpu_mpi -g <input_geometry_file> -p <input_parameter_file>
 ```
 Ensure you modify the input parameter (`parameter.txt`) as follows:
 - `GPU`: `True`
