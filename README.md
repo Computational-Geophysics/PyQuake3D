@@ -78,7 +78,7 @@ Install cupy if you want to use GPU acceleration, we recommened to use conda (e.
 The TDstressFS_C.cpp in folder src is a C++ source file that computes Green's functions, translated from the Python script TDstressFS.py to leverage C++'s performance for efficient numerical calculations. It is compiled into a dynamic library, TDstressFS_C.so, using a provided Makefile, which must be executed with the make command before running the code to ensure compatibility across different computing environments. The generated library is called by the Python script Hmatrix.py via dynamic loading (e.g., using ctypes). To use it, navigate to the code directory src, run make to build TDstressFS_C.so.
 
 ## Running the Script
-PyQuake3D provides two versions of the code, GPU and MPI, which can be run using different main functions：main_gpu or main_mpi. main_mpi uses Hmatrix to reduce memory overhead and thus is more suitable for larger models with more than 40,000 cells.
+PyQuake3D provides two versions of the code, GPU and CPU, which can be run using different main functions：main_gpu_mpi or main_mpi.
 
 ## For MPI version, use the following command:
 To run the PyQuake3D MPI script, use the following command:
