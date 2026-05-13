@@ -48,8 +48,8 @@ Please refer to the [Code Manual](https://pyquake3d.readthedocs.io/en/latest/) f
 -  3D non-planar quasi-dynamic earthquake cycle simulations
 -  Support for rate-and-state aging friction laws
 -  Support for Hierarchical matrix storage and calculation
--  Support for GPU acceleration via CuPy
--  MPI acceleration support 
+-  Support for MPI-based GPU acceleration
+-  MPI-based CPU acceleration support
 -  Suitable for large model earthquake cycle simulation
 -  Support for pore fluid pressure varing with slip due to inelastic processes including dilatancy, pore compaction.
 -  Supports fluid thermal pressurization caused by friction heating.
@@ -67,16 +67,6 @@ A step by step tutorial on how to install and run [BP5-QD_low_resolution case](t
 
 PyQuake3D supports Python 3.8 and above, so there is no need to specify any version when installing the dependent libraries.
 
-- `numpy`
-- `matplotlib`
-- `scipy`
-- `joblib`
-- `mpi4py`
-- `pyvista`
-- `imageio`
-- `psutil`
-- `h5py`
-
   Use pip for the quick installation:
 ```bash
 python -m pip install -e .
@@ -89,17 +79,9 @@ The TDstressFS_C.cpp in folder src is a C++ source file that computes Green's fu
 
 ## Running the Script
 PyQuake3D provides two versions of the code, GPU and MPI, which can be run using different main functions：main_gpu or main_mpi. main_mpi uses Hmatrix to reduce memory overhead and thus is more suitable for larger models with more than 40,000 cells.
-## For single GPU/CPU version, use the following command:
-python -g --inputgeo <input_geometry_file> -p --inputpara <input_parameter_file>
-```bash
-python src/main_gpu.py -g examples/BP5-QD/bp5t.msh -p examples/BP5-QD/parameter.txt
-```
-Ensure you modify the input parameter (`parameter.txt`) as follows:
-- `InputHetoparamter`: `True`
-- `Inputparamter file`: `bp5tparam.dat`
 
 ## For MPI version, use the following command:
-To run the PyQuake3D MPI script, use the following command at root directory:
+To run the PyQuake3D MPI script, use the following command:
 ```bash
 mpirun -n <N> python -m pyquake3d.main_mpi -g <input_geometry_file> -p <input_parameter_file>
 ```
@@ -123,6 +105,14 @@ To run the  Lab-model:
 mpirun -n 10 python -m pyquake3d.main_mpi -g examples/Lab-model/lab.msh -p examples/Lab-model/parameter.txt
 ```
 
+## For MPI GPU version, use the following command:
+python -g --inputgeo <input_geometry_file> -p --inputpara <input_parameter_file>
+```bash
+mpirun -n <N> python -m pyquake3d.main_mpi_gpu -g <input_geometry_file> -p <input_parameter_file>
+```
+Ensure you modify the input parameter (`parameter.txt`) as follows:
+- `GPU`: `True`
+- `GPU_cores: `1`
 
 ## Parameters Setting
 The simulation parameters are implemented by modifying the parameter.txt file, rather than by changing the source code. The heterogeneous stress and friction parameters are imported from external files. Please refer to [Code Manual](https://pyquake3d.readthedocs.io/en/latest/)  for description of parameter details. 
