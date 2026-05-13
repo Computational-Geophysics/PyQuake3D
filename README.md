@@ -49,7 +49,7 @@ Please refer to the [Code Manual](https://pyquake3d.readthedocs.io/en/latest/) f
 -  Support for rate-and-state aging friction laws
 -  Support for Hierarchical matrix storage and calculation
 -  Support for MPI-based GPU acceleration
--  MPI-based CPU acceleration support
+-  Support MPI-based CPU acceleration
 -  Suitable for large model earthquake cycle simulation
 -  Support for pore fluid pressure varing with slip due to inelastic processes including dilatancy, pore compaction.
 -  Supports fluid thermal pressurization caused by friction heating.
