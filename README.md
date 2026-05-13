@@ -28,7 +28,7 @@
 
 ## Authors and Contact
 
-**PyQuake3D** was developed by [Dr. Rongjiang Tang](https://scholar.google.com/citations?user=_4cR3zMAAAAJ&hl=zh-CN) and [Dr. Luca Dal Zilio](https://www.lucadalzilio.net/).  
+**PyQuake3D** was originally developed by [Dr. Rongjiang Tang](https://scholar.google.com/citations?user=_4cR3zMAAAAJ&hl=zh-CN) and [Dr. Luca Dal Zilio](https://www.lucadalzilio.net/).  
 We welcome contributions to the project—please follow the contribution guidelines and help us maintain a clean, consistent codebase.
 
 For questions, suggestions, or collaboration opportunities, feel free to reach out:
