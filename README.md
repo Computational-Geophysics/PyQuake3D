@@ -59,7 +59,7 @@ Please refer to the [Code Manual](https://pyquake3d.readthedocs.io/en/latest/) f
 </p>
 
 ## Quick Start
-A step by step tutorial on how to install and run [BP5-QD_low_resolution case](tutorials/BP5-QD_low_resolution/tutorial_BP5.ipynb) and [circular_asperity_low_resolution case](tutorials/circular_asperity_low_resolution/tutorial_circular_asperity.ipynb). The former uses  parameters to set the initial model, while the latter uses external files to import the initial model.
+A step by step tutorial on how to install and run [BP5-QD_low_resolution case](tutorials/tutorial_BP5.ipynb) and [circular_asperity_low_resolution case](tutorials/ctutorial_circular_asperity.ipynb). The former uses  parameters to set the initial model, while the latter uses external files to import the initial model.
 
 ## Installation
 
