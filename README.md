@@ -111,8 +111,8 @@ python -g --inputgeo <input_geometry_file> -p --inputpara <input_parameter_file>
 mpirun -n <N> python -m pyquake3d.main_gpu_mpi -g <input_geometry_file> -p <input_parameter_file>
 ```
 Ensure you modify the input parameter (`parameter.txt`) as follows:
-- `GPU`: `True`
-- `GPU_cores: 1
+- GPU: True
+- GPU_cores: 1
 
 ## Parameters Setting
 The simulation parameters are implemented by modifying the parameter.txt file, rather than by changing the source code. The heterogeneous stress and friction parameters are imported from external files. Please refer to [Code Manual](https://pyquake3d.readthedocs.io/en/latest/)  for description of parameter details. 
