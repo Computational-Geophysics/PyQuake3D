@@ -304,7 +304,7 @@ void TDstressFS(const std::vector<double>& X, const std::vector<double>& Y, cons
     Vnorm[0] /= norm;
     Vnorm[1] /= norm;
     Vnorm[2] /= norm;
-
+    std::vector<double> eX = {1, 0, 0};
     std::vector<double> eY = {0, 1, 0};
     std::vector<double> eZ = {0, 0, 1};
     
@@ -315,14 +315,16 @@ void TDstressFS(const std::vector<double>& X, const std::vector<double>& Y, cons
     Vstrike[2] = eZ[0] * Vnorm[1] - eZ[1] * Vnorm[0];
 	
     norm = std::sqrt(Vstrike[0] * Vstrike[0] + Vstrike[1] * Vstrike[1] + Vstrike[2] * Vstrike[2]);
-    if (norm == 0) {
-        Vstrike[0] = eY[0] * Vnorm[2];
-        Vstrike[1] = eY[1] * Vnorm[2];
-        Vstrike[2] = eY[2] * Vnorm[2];
-    }
     Vstrike[0] /= norm;
     Vstrike[1] /= norm;
     Vstrike[2] /= norm;
+    if (norm <1e-5) {
+        Vstrike[0] = eX[0] * Vnorm[2];
+        Vstrike[1] = eX[1] * Vnorm[2];
+        Vstrike[2] = eX[2] * Vnorm[2];
+    }
+    
+    
 	
     //  Vdip
     std::vector<double> Vdip(3);
@@ -340,7 +342,7 @@ void TDstressFS(const std::vector<double>& X, const std::vector<double>& Y, cons
 	
     // Transform coordinates
     //std::vector<std::vector<double>> X1(n, std::vector<double>(3));
-	std::vector<std::array<double, 3>> X1(n);  // ���� n ����ά����
+	std::vector<std::array<double, 3>> X1(n);  // 
 
 	for (size_t i = 0; i < n; ++i) {
 		std::vector<double> delta = {
@@ -366,14 +368,14 @@ void TDstressFS(const std::vector<double>& X, const std::vector<double>& Y, cons
         p3[i] = At[0][i] * (P3[0] - P2[0]) + At[1][i] * (P3[1] - P2[1]) + At[2][i] * (P3[2] - P2[2]);
     }
 	
-	/*for(size_t i = 0; i < 3; ++i)
-	{
-		for(size_t j = 0; j < 3; ++j)
-		{
-			printf("%f ",At[i][j]);
-		}
-		printf("\n");
-	}*/
+	// for(size_t i = 0; i < 3; ++i)
+	// {
+	// 	for(size_t j = 0; j < 3; ++j)
+	// 	{
+	// 		printf("%f ",At[i][j]);
+	// 	}
+	// 	printf("\n");
+	// }
 	
     // e12, e13, e23
     std::vector<double> e12 = {(p2[0] - p1[0]), (p2[1] - p1[1]), (p2[2] - p1[2])};
@@ -397,7 +399,7 @@ void TDstressFS(const std::vector<double>& X, const std::vector<double>& Y, cons
 	std::vector<int> Trimode = trimodefinder(X1, p1, p2, p3);
 	
 	//printf("%f %f %f\n",A_angle,B_angle,C_angle);
-    // 
+    
     Exx.resize(n, 0.0);
     Eyy.resize(n, 0.0);
     Ezz.resize(n, 0.0);
@@ -1818,6 +1820,7 @@ void TDstress_HarFunc(const std::vector<double>& X,
 
     // ----------------------------------------
     // Vstrike = normalize(cross(eZ, Vnorm))
+    Vec3 eX = {1.0, 0.0, 0.0};
     Vec3 eY = {0.0, 1.0, 0.0};
     Vec3 eZ = {0.0, 0.0, 1.0};
     Vec3 Vstrike = {
@@ -1827,10 +1830,10 @@ void TDstress_HarFunc(const std::vector<double>& X,
     };
     double Vstrike_len = sqrt(Vstrike[0]*Vstrike[0] + Vstrike[1]*Vstrike[1] + Vstrike[2]*Vstrike[2]);
 
-    if (Vstrike_len == 0.0) {
-        Vstrike[0] = eY[0] * Vnorm[2];
-        Vstrike[1] = eY[1] * Vnorm[2];
-        Vstrike[2] = eY[2] * Vnorm[2];
+    if (Vstrike_len <1e-5){
+        Vstrike[0] = eX[0] * Vnorm[2];
+        Vstrike[1] = eX[1] * Vnorm[2];
+        Vstrike[2] = eX[2] * Vnorm[2];
     } else {
         Vstrike[0] /= Vstrike_len;
         Vstrike[1] /= Vstrike_len;
