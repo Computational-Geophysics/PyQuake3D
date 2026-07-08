@@ -70,7 +70,6 @@ TASK_TAG = 1
 RESULT_TAG = 2
 STOP_TAG = 3  # End signal
 
-
     
 def bounding_box(cluster, points):
     """
@@ -866,9 +865,9 @@ class BlockTree:
                 RIref,RIref1,RIref2,Iref,scan_all = reset_reference_row(Iref)
             else:
                 #print('2')
-                RIref -= u_k[Iref:Iref+3][:, None] * (v_k / alpha)[None, :]
-                RIref1 -= u_k1[Iref:Iref+3][:, None] * (v_k1 / alpha1)[None, :]
-                RIref2 -= u_k2[Iref:Iref+3][:, None] * (v_k2 / alpha2)[None, :]
+                RIref -= u_k[Iref:Iref+3][:, None] * (v_k / (alpha+1e-10))[None, :]
+                RIref1 -= u_k1[Iref:Iref+3][:, None] * (v_k1 / (alpha1+1e-10))[None, :]
+                RIref2 -= u_k2[Iref:Iref+3][:, None] * (v_k2 / (alpha2+1e-10))[None, :]
             if(scan_all==True):
                 break
             
@@ -879,9 +878,9 @@ class BlockTree:
                 #print(RJref,Jref)
             else:
                 #print('2')
-                RJref -= (v_k / alpha)[Jref:Jref+3][None, :] * u_k[:, None]
-                RJref1 -= (v_k1 / alpha1)[Jref:Jref+3][None, :] * u_k1[:, None]
-                RJref2 -= (v_k2 / alpha2)[Jref:Jref+3][None, :] * u_k2[:, None]
+                RJref -= (v_k / (alpha+1e-10))[Jref:Jref+3][None, :] * u_k[:, None]
+                RJref1 -= (v_k1 / (alpha1+1e-10))[Jref:Jref+3][None, :] * u_k1[:, None]
+                RJref2 -= (v_k2 / (alpha2+1e-10))[Jref:Jref+3][None, :] * u_k2[:, None]
             if(scan_all==True):
                 break
             
@@ -1072,18 +1071,18 @@ class BlockTree:
 
 
             us_A1d.append(u_k3)
-            vs_A1d.append(v_k3/(alpha3+1e-16))
+            vs_A1d.append(v_k3/(alpha3+1e-10))
             us_A2d.append(u_k4)
-            vs_A2d.append(v_k4/(alpha4+1e-16))
+            vs_A2d.append(v_k4/(alpha4+1e-10))
             us_Bd.append(u_k5)
             if(abs(alpha5)<1e-10):
                 vs_Bd.append(np.zeros(len(v_k5)))
             else:
                 vs_Bd.append(v_k5/(alpha5+1e-16))
 
-            step_size = np.sqrt(np.sum(u_k3 ** 2) * np.sum((v_k3 / alpha3) ** 2))
-            step_size1 = np.sqrt(np.sum(u_k4 ** 2) * np.sum((v_k4 / alpha4) ** 2))
-            step_size2 = np.sqrt(np.sum(u_k5 ** 2) * np.sum((v_k5 / alpha5) ** 2))
+            step_size = np.sqrt(np.sum(u_k3 ** 2) * np.sum((v_k3 / (alpha3+1e-10)) ** 2))
+            step_size1 = np.sqrt(np.sum(u_k4 ** 2) * np.sum((v_k4 / (alpha4+1e-10)) ** 2))
+            step_size2 = np.sqrt(np.sum(u_k5 ** 2) * np.sum((v_k5 / (alpha5+1e-10)) ** 2))
             if verbose:
                 print(
                     f"Diteration:{k},pivot row={Istar:4d}, pivot col={Jstar:4d}, "
@@ -1098,9 +1097,9 @@ class BlockTree:
             if Iref <= Istar < Iref + 3:
                 RIref,RIref1,RIref2, Iref,scan_all = reset_reference_row(Iref)
             else:
-                RIref -= u_k3[Iref:Iref+3][:, None] * (v_k3 / alpha3)[None, :]
-                RIref1 -= u_k4[Iref:Iref+3][:, None] * (v_k4 / alpha4)[None, :]
-                RIref2 -= u_k5[Iref:Iref+3][:, None] * (v_k5 / alpha5)[None, :]
+                RIref -= u_k3[Iref:Iref+3][:, None] * (v_k3 / (alpha3+1e-10))[None, :]
+                RIref1 -= u_k4[Iref:Iref+3][:, None] * (v_k4 / (alpha4+1e-10))[None, :]
+                RIref2 -= u_k5[Iref:Iref+3][:, None] * (v_k5 / (alpha5+1e-10))[None, :]
             #print(f"!!!!!!!!!!!!!!!!!!!!_",flush=True)
             if(scan_all==True):
                 break
@@ -1108,9 +1107,9 @@ class BlockTree:
             if Jref <= Jstar < Jref + 3:
                 RJref,RJref1,RJref2, Jref,scan_all = reset_reference_col(Jref)
             else:
-                RJref -= (v_k3 / alpha3)[Jref:Jref+3][None, :] * u_k3[:, None]
-                RJref1 -= (v_k4 / alpha4)[Jref:Jref+3][None, :] * u_k4[:, None]
-                RJref2 -= (v_k5 / alpha5)[Jref:Jref+3][None, :] * u_k5[:, None]
+                RJref -= (v_k3 / (alpha3+1e-10))[Jref:Jref+3][None, :] * u_k3[:, None]
+                RJref1 -= (v_k4 / (alpha4+1e-10))[Jref:Jref+3][None, :] * u_k4[:, None]
+                RJref2 -= (v_k5 / (alpha5+1e-10))[Jref:Jref+3][None, :] * u_k5[:, None]
             #print(f"!!!!!!!!!!!!!!!!!!!!0",flush=True)
             if(scan_all==True):
                 break
@@ -1471,6 +1470,43 @@ class BlockTree:
         return block
     
     
+    def estimate_rank_load(self,blocks_to_process):
+        load_masks=[]
+        for i in range(len(blocks_to_process)):
+            if(hasattr(blocks_to_process[i], 'judaca') and blocks_to_process[i].judaca==True):
+                rank_mat=blocks_to_process[i].ACA_dictS['V_ACA_A1s'].shape[0]
+                load1=rank_mat*(len(blocks_to_process[i].row_cluster)+len(blocks_to_process[i].col_cluster))
+            else:
+                load1=len(blocks_to_process[i].row_cluster)*len(blocks_to_process[i].col_cluster)
+            load_masks.append(load1)
+        
+        num_procs=size
+        counts = []
+        current_proc_load = 0
+        current_count = 0
+        total_load = sum(load_masks)
+        target_load = total_load / num_procs
+        
+        # 遍历并划分
+        for i in range(len(load_masks)):
+
+            if len(counts) < num_procs - 1:
+                # If adding the current block reduces the difference between the current load and the target load, then add the current block.
+                # Otherwise, attempt to split the load into the next process.
+                if abs(current_proc_load + load_masks[i] - target_load) < abs(current_proc_load - target_load):
+                    current_proc_load += load_masks[i]
+                    current_count += 1
+                else:
+                    counts.append(current_count)
+                    current_proc_load = load_masks[i]
+                    current_count = 1
+            else:
+                # last mask
+                current_count += 1
+        counts.append(current_count)
+        #print(load_masks,counts)
+        return counts
+            
 
 
     def parallel_block_scatter_send(self, blocks_to_process, target_ranks=None, plotHmatrix=False):
@@ -1511,7 +1547,8 @@ class BlockTree:
             counts = [num_blocks // num_total] * num_total
             for i in range(num_blocks % num_total):
                 counts[i] += 1
-            
+            counts_=self.estimate_rank_load(blocks_to_process)
+            #print('couts: ',counts,counts_)
             task_chunks = []
             start = 0
             for c in counts:
@@ -1568,24 +1605,6 @@ class BlockTree:
             else:
                 print(f'rank {rank} idle (not targeted)')
             
-            # if rank in target_ranks:
-            #     local_blocks = []
-            #     base_tag = 77 + rank * 100
-            #     received_count = 0
-            #     while True:
-            #         status = MPI.Status()
-            #         # Probe for any messages from rank 0 
-                    
-            #         if not comm.Iprobe(source=0, tag=MPI.ANY_TAG, status=status):
-            #             break
-
-            #         # Only receive messages within its own tag range
-            #         if base_tag <= status.tag < base_tag + n_task_per_proc:
-            #             task = comm.recv(source=0, tag=status.tag, status=status)
-            #             local_blocks.extend(task)
-            #             received_count += 1
-        
-        # Unified printing
         print(f'rank {rank} final Hmatrix sub-blocks number: {len(local_blocks)}')
 
         
