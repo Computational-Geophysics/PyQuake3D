@@ -156,8 +156,8 @@ The operation of pyquake3d relies on Green's functions; the C-language library f
                 fnamePara = args.inputpara
             
             except:
-                fnamegeo='examples/WMF/WMF20251203.msh'
-                fnamePara='examples/WMF/parameter.txt'
+                fnamegeo='para/BP5-QD/bp5t.msh'
+                fnamePara='para/BP5-QD/parameter.txt'
             
             
             print('Input msh geometry file:',fnamegeo, flush=True)
