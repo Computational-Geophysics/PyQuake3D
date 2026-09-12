@@ -327,6 +327,17 @@ in :numref:`Stress and Friction Settings` and :numref:`Nucleation Settings`. :nu
      - If True, VTU files will be saved in the outvtk directory.
 
 
+Fault station output
+--------------------
+You may ouput the slip rate, shear stress, normal stress, and slip displacement at specific points on the fault surface. 
+The output points are defined in the ``faultstation.txt`` file in the parameter directory, which should be placed in the same directory as ``parameter.txt``. The format of each row in the ``faultstation.txt`` file is:
+.. code-block:: text
+
+   staion_name(0) X_coordinate(0) Y_coordinate(0) Z_coordinate(0)
+   staion_name(1) X_coordinate(1) Y_coordinate(1) Z_coordinate(1)
+   …
+
+
 External file format
 --------------------
 
