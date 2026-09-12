@@ -53,7 +53,7 @@ Please refer to the [Code Manual](https://pyquake3d.readthedocs.io/en/latest/) f
 -  Suitable for large model earthquake cycle simulation
 -  Support for pore fluid pressure varing with slip due to inelastic processes including dilatancy, pore compaction.
 -  Supports fluid thermal pressurization caused by friction heating.
--  Singularity-free regularized Green's function.
+-  Singularity-free regularized Green's function (only full space).
 
 <p align="center">
   <img src="https://github.com/Computational-Geophysics/PyQuake3D//raw/main/images/framework/framework_new.png" alt="Framework Overview">
@@ -71,7 +71,7 @@ python -m pip install -e .
 ```
 Install cupy if you want to use GPU acceleration, we recommened to use conda (e.g. CUDA 11.8):conda install -c conda-forge cupy cudatoolkit=11.8
 
-### Install Greenfuntions C++ environment**
+### Install Greenfuntions C++ environment
 
 The operation of PyQuake3D relies on Green's functions; the C++ library for Green's functions must be installed.
 
