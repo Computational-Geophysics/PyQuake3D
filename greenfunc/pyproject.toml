@@ -1,0 +1,19 @@
+[build-system]
+requires = [
+    "setuptools>=64",
+    "wheel",
+    "pybind11>=2.10"
+]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "greenfunctions_lib"
+version = "0.1.0"
+description = "Green function C++ accelerated library"
+requires-python = ">=3.8"
+
+[project.optional-dependencies]
+examples = [
+    "numpy>=1.21",
+    "matplotlib>=3.5",
+]

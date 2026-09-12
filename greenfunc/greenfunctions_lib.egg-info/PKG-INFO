@@ -1,0 +1,8 @@
+Metadata-Version: 2.4
+Name: greenfunctions_lib
+Version: 0.1.0
+Summary: Green function C++ accelerated library
+Requires-Python: >=3.8
+Provides-Extra: examples
+Requires-Dist: numpy>=1.21; extra == "examples"
+Requires-Dist: matplotlib>=3.5; extra == "examples"
