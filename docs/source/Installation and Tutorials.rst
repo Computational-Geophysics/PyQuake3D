@@ -63,6 +63,7 @@ MPI-Based Execution on Linux
 
 **Step 2: Install Greenfuntions C++ environment**
 The operation of pyquake3d relies on Green's functions; the C-language library for Green's functions must be installed.
+
 1. Download from https://github.com/Computational-Geophysics/PyQuake3D
 
 2. Install an MPI implementation and g++ compiler (including gcc and other related tools).
