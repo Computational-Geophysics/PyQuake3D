@@ -162,7 +162,7 @@ The operation of pyquake3d relies on Green's functions; the C-language library f
             print('Input msh geometry file:',fnamegeo, flush=True)
             print('Input parameter file:',fnamePara, flush=True)   
 
-            nodelst,elelst=readmsh.read_mshV2(fnamegeo)                             #load mesh file
+            nodelst,elelst=readmsh.read_gmsh(fnamegeo)                             #load mesh file
             Para=config.readPara(fnamePara)                                         #load parameter file
             sim0=QDsim.QDsim(elelst,nodelst,Para)                                   #create earthquake cycle model class
             HMobj=Hmat.Hmatrix(sim0.xg,sim0.nodelst,sim0.elelst,sim0.eleVec,Para)   #create Hmatrice class
