@@ -53,6 +53,7 @@ Please refer to the [Code Manual](https://pyquake3d.readthedocs.io/en/latest/) f
 -  Suitable for large model earthquake cycle simulation
 -  Support for pore fluid pressure varing with slip due to inelastic processes including dilatancy, pore compaction.
 -  Supports fluid thermal pressurization caused by friction heating.
+-  Singularity-free regularized Green's function.
 
 <p align="center">
   <img src="https://github.com/Computational-Geophysics/PyQuake3D//raw/main/images/framework/framework_new.png" alt="Framework Overview">
@@ -84,7 +85,6 @@ The operation of PyQuake3D relies on Green's functions; the C++ library for Gree
    - ``sudo apt install openmpi-bin libopenmpi-dev``
   
 3. Navigate to the ``greenfunc`` directory, run ``python -m pip install -e.`` to build ``greenfuncions_lib``.
-.. note::
    - If you use macos system, run ``bash install.sh`` to build ``greenfuncions_lib``.
 
 4. For details on how to call and use the Green's function, you can refer to and run the Python examples provided in the `greenfunc/examples` folder.
