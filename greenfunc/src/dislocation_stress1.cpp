@@ -617,8 +617,8 @@ double traction_outer_integrand(double u, void* params) {
     double epsrel = 1e-5;
     //  [0, 1-u]，
 
-    //int status =gsl_integration_qags(&F_inner, 0, 1.0-u, epsabs, epsrel, 1000, op->w_inner, &result, &error);
-    gsl_integration_qag(&F_inner, 0, 1.0 - u, epsabs, epsrel, 1000,GSL_INTEG_GAUSS21, op->w_inner, &result, &error);
+    int status =gsl_integration_qags(&F_inner, 0, 1.0-u, epsabs, epsrel, 1000, op->w_inner, &result, &error);
+    //gsl_integration_qag(&F_inner, 0, 1.0 - u, epsabs, epsrel, 1000,GSL_INTEG_GAUSS21, op->w_inner, &result, &error);
     
     return result;
 }
@@ -818,8 +818,8 @@ Matrix3d adaptive_integrate_traction(const Vector3d& obs, const Vector3d& p1, co
         
         //double epsabs = 1e-12;
         double epsrel = 1e-5;
-        //int status =gsl_integration_qags(&F, 0, 1.0, epsabs, epsrel, 1000, w_outer, &res, &err);
-        int status =gsl_integration_qag(&F, 0, 1.0,  epsabs,epsrel, 1000, GSL_INTEG_GAUSS21,w_outer, &res, &err);
+        int status =gsl_integration_qags(&F, 0, 1.0, epsabs, epsrel, 1000, w_outer, &res, &err);
+        //int status =gsl_integration_qag(&F, 0, 1.0,  epsabs,epsrel, 1000, GSL_INTEG_GAUSS21,w_outer, &res, &err);
   
         // if (status != GSL_SUCCESS)
         // {
