@@ -109,13 +109,13 @@ mpirun -n 10 python -m pyquake3d.main_mpi -g examples/BP5-QD/bp5t.msh -p example
 
 
 To run the HF-model:
-mpirun -n 10 python -m pyquake3d.main_mpi -g examples/HF-model/HFmodel.msh -p examples/HF-model/parameter.txt
+mpirun -n 10 python -m pyquake3d.main_mpi -g para/HF-model/HFmodel.msh -p para/HF-model/parameter.txt
 
 To run the  EAFZ-model:
-mpirun -n 10 python -m pyquake3d.main_mpi -g examples/EAFZ-model/turkey.msh -p examples/EAFZ-model/parameter.txt
+mpirun -n 10 python -m pyquake3d.main_mpi -g para/EAFZ-model/turkey.msh -p para/EAFZ-model/parameter.txt
 
 To run the  Lab-model:
-mpirun -n 10 python -m pyquake3d.main_mpi -g examples/Lab-model/lab.msh -p examples/Lab-model/parameter.txt
+mpirun -n 10 python -m pyquake3d.main_mpi -g para/Lab-model/lab.msh -p para/Lab-model/parameter.txt
 ```
 
 ## For MPI GPU version, use the following command:
