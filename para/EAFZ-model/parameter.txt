@@ -1,0 +1,104 @@
+#Files and cells
+Corefunc directory: core_turkey
+save Corefunc: True
+Node_order: False
+Scale_km: True
+
+#Only availible for mpi version
+Hmatrix_mpi_plot:True
+Lattice Matrice: False
+Lattice Partitioning depth:2
+Using C++ green function:True
+
+#Only availible for single GPU/CPU version
+Max_thread workers: 50
+Batch_size: 1000
+GPU:False
+GPU_cores: 2
+
+#Property
+Lame constants: 32038120320.0
+Shear modulus: 32038120320.0
+Rock density: 2670
+InputHetoparamter: False
+Inputparamter file: bp5tparam.dat
+
+#regularized parameters
+Regularized fault zone: 0.0
+InputRFZ:False
+InputRFZ file: eps.txt
+
+#Fluid
+If Dilatancy:False
+If Coupledthermal:False
+Dilatancy coefficient: 3e-4
+Hydraulic diffusivity: 1e-5
+Shearing zone width: 0.01
+Effective compressibility: 8e-11
+Constant porepressure: 2
+Initial porepressure: 2
+
+#Thermal pressurization
+If thermal: False
+Thermal diffusivity:1e-6
+Ratio of thermal expansivity to compressibility:0.1e6
+Heat capacity: 2.7e6
+Shearing zone width: 0.01
+Background temperature: 1
+Initial temperature: 1
+
+
+
+#Stress
+Half space: True
+Fix_Tn:False
+ssv_scale: 1.0
+ssh1_scale: 1.6
+ssh2_scale: 0.6
+Angle between ssh1 and X-axis: 50
+Vertical principal stress value: 25
+Vertical principal stress value varies with depth: True
+Turnning depth: 5000
+Normal traction solved from stress tensor: False
+Shear traction solved from stress tensor: False
+Rake solved from stress tensor: False
+Fix_rake: 0
+Widths of VS region: 10000
+Widths of surface VS region: 2000
+Transition region from VS to VW region: 3000
+
+
+#Friction
+Reference slip rate: 1e-6
+Reference friction coefficient: 0.6
+Rate-and-state parameters a in VS region: 0.04
+Rate-and-state parameters b in VS region: 0.03
+Characteristic slip distance in VS region: 0.12
+Rate-and-state parameters a in VW region: 0.004
+Rate-and-state parameters b in VW region: 0.03
+Characteristic slip distance in VW region: 0.12
+Rate-and-state parameters a in nucleation region: 0.01
+Rate-and-state parameters b in nucleation region: 0.018
+Characteristic slip distance in nucleation region: 0.004
+Initial slip rate in nucleation region: 3e-2
+Plate loading rate: 1e-9
+ChangefriA: True
+Initlab: False
+
+#nucleartion
+Set_nucleation: False
+Nuclea_posx: 34000
+Nuclea_posy: 15000
+Nuclea_posz: -15000
+Radius of nucleation: 8000
+
+#output
+outputSLIPV: False
+totaloutputsteps: 1000
+outsteps: 10
+outputvtu: True
+
+
+
+
+
