@@ -1,2 +1,0 @@
-[console_scripts]
-pyquake-plot = pyquake_tools.cli:main

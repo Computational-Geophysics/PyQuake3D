@@ -1,9 +1,0 @@
-numpy
-matplotlib
-pyvista
-imageio
-scipy
-joblib
-mpi4py
-h5py
-psutil
