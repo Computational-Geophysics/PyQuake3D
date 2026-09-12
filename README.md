@@ -58,9 +58,6 @@ Please refer to the [Code Manual](https://pyquake3d.readthedocs.io/en/latest/) f
   <img src="https://github.com/Computational-Geophysics/PyQuake3D//raw/main/images/framework/framework_new.png" alt="Framework Overview">
 </p>
 
-## Quick Start
-A step by step tutorial on how to install and run [BP5-QD_low_resolution case](tutorials/tutorial_BP5.ipynb) and [circular_asperity_low_resolution case](tutorials/ctutorial_circular_asperity.ipynb). The former uses  parameters to set the initial model, while the latter uses external files to import the initial model.
-
 ## Installation
 
 ### Python Requirements
@@ -73,9 +70,24 @@ python -m pip install -e .
 ```
 Install cupy if you want to use GPU acceleration, we recommened to use conda (e.g. CUDA 11.8):conda install -c conda-forge cupy cudatoolkit=11.8
 
-### C++ Requirements
+### Install Greenfuntions C++ environment**
 
-The TDstressFS_C.cpp in folder src is a C++ source file that computes Green's functions, translated from the Python script TDstressFS.py to leverage C++'s performance for efficient numerical calculations. It is compiled into a dynamic library, TDstressFS_C.so, using a provided Makefile, which must be executed with the make command before running the code to ensure compatibility across different computing environments. The generated library is called by the Python script Hmatrix.py via dynamic loading (e.g., using ctypes). To use it, navigate to the code directory src, run make to build TDstressFS_C.so.
+The operation of pyquake3d relies on Green's functions; the C++ library for Green's functions must be installed.
+1. Download from https://github.com/Computational-Geophysics/PyQuake3D
+
+2. Install an MPI implementation and g++ compiler (including gcc and other related tools).
+   Common options are:
+
+   - ``sudo apt update``
+   - ``sudo apt install g++``
+   - ``sudo apt install openmpi-bin libopenmpi-dev``
+  
+3. Navigate to the ``greenfunc`` directory, run ``python -m pip install -e.`` to build ``greenfuncions_lib``.
+.. note::
+   - If you use macos system, run ``bash install.sh`` to build ``greenfuncions_lib``.
+
+4. For details on how to call and use the Green's function, you can refer to and run the Python examples provided in the `greenfunc/examples` folder.
+
 
 ## Running the Script
 PyQuake3D provides two versions of the code, GPU and CPU, which can be run using different main functions：main_gpu_mpi or main_mpi.
