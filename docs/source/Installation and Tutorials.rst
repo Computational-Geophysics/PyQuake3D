@@ -76,7 +76,7 @@ The operation of pyquake3d relies on Green's functions; the C-language library f
 3. Navigate to the ``greenfunc`` directory, run ``python -m pip install -e.`` to build ``greenfuncions_lib``.
 
 .. note::
-   - If you us macos system, run ``bash install.sh`` to build ``greenfuncions_lib``.
+   - If you use macos system, run ``bash install.sh`` to build ``greenfuncions_lib``.
 
 4. For details on how to call and use the Green's function, you can refer to and run the Python examples provided in the `greenfunc/examples` folder.
 
