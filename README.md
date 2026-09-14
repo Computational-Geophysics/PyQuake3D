@@ -128,6 +128,16 @@ Ensure you modify the input parameter (`parameter.txt`) as follows:
 ## Parameters Setting
 The simulation parameters are implemented by modifying the parameter.txt file, rather than by changing the source code. The heterogeneous stress and friction parameters are imported from external files. Please refer to [Code Manual](https://pyquake3d.readthedocs.io/en/latest/)  for description of parameter details. 
 
+
+
+## Examples
+
+Explore selected simulations performed with PyQuake3D:
+
+- [*Seismic cycles on a planar fault with frictional heterogeneity*](https://www.youtube.com/watch?v=N_yA4uY77C0)
+- [*Seismic cycles on the East Anatolian Fault Zone*](https://www.youtube.com/watch?v=oFy3FSLs3UQ)
+
+  
 ## License
 
 This project is licensed under the MIT License. See the `LICENSE` file for more details.
@@ -147,12 +157,6 @@ We sincerely thank Ryosuke Ando and So Ozawa for their valuable guidance in the 
 
 We gratefully acknowledge the institutional and technical support provided by NTU and EOS, and the contributions of researchers and collaborators who help improve the codebase.
 
-## Examples
-
-Explore selected simulations performed with PyQuake3D:
-
-- [*Seismic cycles on a planar fault with frictional heterogeneity*](https://www.youtube.com/watch?v=N_yA4uY77C0)
-- [*Seismic cycles on the East Anatolian Fault Zone*](https://www.youtube.com/watch?v=oFy3FSLs3UQ)
 
 ## Citation
 
