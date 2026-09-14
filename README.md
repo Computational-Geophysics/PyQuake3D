@@ -91,7 +91,7 @@ The operation of PyQuake3D relies on Green's functions; the C++ library for Gree
 ## Running the Script
 PyQuake3D provides two versions of the code, GPU and CPU, which can be run using different main functions：main_gpu_mpi or main_mpi.
 
-## For MPI version, use the following command:
+## For MPI CPU version, use the following command:
 To run the PyQuake3D MPI script, use the following command:
 ```bash
 mpirun -n <N> python -m pyquake3d.main_mpi -g <input_geometry_file> -p <input_parameter_file>
@@ -103,7 +103,7 @@ For example:
 To execute benchmarks like BP5-QD, use:
 ```bash
 In the PyQuake3D root directory, To run the BP5-QD benchmark:
-mpirun -n 10 python -m pyquake3d.main_mpi -g examples/BP5-QD/bp5t.msh -p examples/BP5-QD/parameter.txt
+mpirun -n 10 python -m pyquake3d.main_mpi -g para/BP5-QD/bp5t.msh -p examples/BP5-QD/parameter.txt
 
 
 To run the HF-model:
