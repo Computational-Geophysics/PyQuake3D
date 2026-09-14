@@ -75,19 +75,17 @@ Install cupy if you want to use GPU acceleration, we recommened to use conda (e.
 
 The operation of PyQuake3D relies on Green's functions; the C++ library for Green's functions must be installed.
 
-1. Download from https://github.com/Computational-Geophysics/PyQuake3D
-
-2. Install an MPI implementation and g++ compiler (including gcc and other related tools).
+1. Install an MPI implementation and g++ compiler (including gcc and other related tools).
    Common options are:
 
    - ``sudo apt update``
    - ``sudo apt install g++``
    - ``sudo apt install openmpi-bin libopenmpi-dev``
   
-3. Navigate to the ``greenfunc`` directory, run ``python -m pip install -e.`` to build ``greenfuncions_lib``.
+2. Navigate to the ``greenfunc`` directory, run ``python -m pip install -e.`` to build ``greenfuncions_lib``.
    - If you use macos system, run ``bash install.sh`` to build ``greenfuncions_lib``.
 
-4. For details on how to call and use the Green's function, you can refer to and run the Python examples provided in the `greenfunc/examples` folder.
+3. For details on how to call and use the Green's function, you can refer to and run the Python examples provided in the `greenfunc/examples` folder.
 
 
 ## Running the Script
