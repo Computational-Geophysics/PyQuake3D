@@ -24,6 +24,7 @@ dependencies = [
     "h5py",
     "psutil",
 	"torch",
+	"meshio",
 ]
 
 [project.urls]
