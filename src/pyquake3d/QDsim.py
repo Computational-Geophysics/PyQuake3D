@@ -1956,8 +1956,8 @@ class QDsim:
             
             #self.slipv=diag_comm.allreduce(self.slipv, op=MPI.SUM)
             indexmin=np.where(self.slipv<1e-30)[0]
-            if(len(indexmin)>0):
-                self.slipv[indexmin]=1e-30
+            #if(len(indexmin)>0):
+            #    self.slipv[indexmin]=1e-30
             #self.maxslipv0=np.max(self.slipv)
             #print(self.Tno.shape,rank,cart_rank)
             self.slip1=self.slip1+self.slipv1*h
@@ -2191,9 +2191,9 @@ class QDsim:
         #print(np.max(self.slipv))
         #self.rake=np.arctan2(self.Tt2o,self.Tt1o)
         
-        indexmin=np.where(self.slipv<1e-30)[0]
-        if(len(indexmin)>0):
-            self.slipv[indexmin]=1e-30
+        #indexmin=np.where(self.slipv<1e-30)[0]
+        #if(len(indexmin)>0):
+        #    self.slipv[indexmin]=1e-30
         #self.maxslipv0=np.max(self.slipv)
         #update slip
         self.slip1=self.slip1+self.slipv1*h
