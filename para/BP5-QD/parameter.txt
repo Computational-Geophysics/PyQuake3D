@@ -26,6 +26,8 @@ Regularized fault zone: 0.0
 InputRFZ:False
 InputRFZ file: eps.txt
 
+
+
 #Fluid
 If Dilatancy:False
 If Coupledthermal:False
@@ -37,7 +39,7 @@ Constant porepressure: 2
 Initial porepressure: 2
 
 #Thermal pressurization
-If thermal: False
+If thermal: True
 Thermal diffusivity:1e-6
 Shearing zone width: 2e-3
 Ratio of thermal expansivity to compressibility:0.1e6
@@ -45,6 +47,7 @@ Heat capacity: 2.7e6
 Half width: 0.01
 Background temperature: 1
 Initial temperature: 1
+
 
 #Stress
 Half space: True
@@ -91,7 +94,7 @@ Radius of nucleation: 300
 
 #output
 outputSLIPV: False
-totaloutputsteps: 2000
+totaloutputsteps: 3000
 outsteps: 100
 outputvtu: True
 
