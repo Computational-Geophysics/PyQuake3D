@@ -110,6 +110,21 @@ def readPara(data_dir):
     except:
         print('No thermal parameters.')
     
+    Para['If FTC'] = Para0.get('If FTC', 'False') == 'True'
+    
+    if Para['If FTC']:
+        Para['FTC maximum weakening'] = float(Para0['FTC maximum weakening'])
+        Para['FTC weakening velocity'] = float(Para0['FTC weakening velocity'])
+        Para['FTC characteristic distance'] = float(Para0['FTC characteristic distance'])
+        Para['FTC healing rate low velocity'] = float(Para0['FTC k low velocity'])
+        Para['FTC healing rate high velocity'] = float(Para0['FTC k high velocity'])
+        Para['FTC activation energy low velocity'] = float(Para0['FTC Q low velocity'])
+        Para['FTC activation energy high velocity'] = float(Para0['FTC Q high velocity'])
+        Para['FTC reference temperature low velocity'] = float(Para0['FTC Tref low velocity'])
+        Para['FTC reference temperature high velocity'] = float(Para0['FTC Tref high velocity'])
+        Para['FTC KQT transition velocity'] = float(Para0['FTC KQT transition velocity'])
+        Para['FTC residual target c'] = float(Para0.get('FTC residual target c', '0.0'))
+
     Para['Half space']=Para0['Half space']=='True'
     Para['Fix_Tn']=Para0['Fix_Tn']=='True'
     Para['ssv_scale']=float(Para0['ssv_scale'])

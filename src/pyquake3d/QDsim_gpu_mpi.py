@@ -114,6 +114,14 @@ class QDsim_gpumpi(QDsim.QDsim):
 
 
 
+    def _stage_elastic_rates_local(self, u1, u2):
+        if self.Lt_jud:
+            return super()._stage_elastic_rates_local(u1, u2)
+        slip_tensor = torch.from_numpy(np.stack((u1, u2), axis=1)).to(self.device)
+        traction = self.Hmatrix_tensor.hmatrix_matvec_2d(slip_tensor).reshape(-1, 3).cpu().numpy()
+        normal = np.zeros(len(u1)) if self.fix_Tn else traction[:, 2]
+        return np.array([normal, traction[:, 0], traction[:, 1]])
+
     def simu_forward_mpi_tensor(self,dttry):
         slipv1=self.slipv1-self.slipvC*np.cos(self.rake0)
         slipv2=self.slipv2-self.slipvC*np.sin(self.rake0)
@@ -210,6 +218,7 @@ class QDsim_gpumpi(QDsim.QDsim):
                     sys.exit()
 
         self.time=self.time+h
+        Tno_yhk,Tt1o_yhk,Tt2o_yhk=self._finish_scalar_step(h)
 
         #if(rank==0):
         #update slip rate and rake
@@ -218,28 +227,33 @@ class QDsim_gpumpi(QDsim.QDsim):
         self.Tt1o_local=Tt1o_yhk
         self.Tt2o_local=Tt2o_yhk
         self.state_local=state_yhk
+        for i in range(len(self.fault_station_index)):
+            station_index = self.fault_station_index[i]
+            matches = np.flatnonzero(self.local_index == station_index)
+            #print(rank,i,self.fault_station_index)
+            if matches.size > 0:
+                # print(rank,i,self.fault_station_index)
+                local_station_index = int(matches[0])
+                file = open(self.mpioutdirectory+'/'+self.faultstation_names[i], "a")
+                # slip1_value = self.slip1[station_index]
+                # slip2_value = self.slip2[station_index]
+                # slip_value = self.slip[station_index]
+                slipv1_value = self.slipv1[station_index]
+                slipv2_value = self.slipv2[station_index]
+                slipv_value = self.slipv[station_index]
+                Tt1_value = self.Tt1o_local[local_station_index]
+                Tt2_value = self.Tt2o_local[local_station_index]
+                Tno_value = self.Tno_local[local_station_index]
 
-        self.slipv1[:]=0
-        self.slipv2[:]=0
-        self.slipv1[self.local_index]=(2.0*self.V0)*np.exp(-self.state_local/self.a[self.local_index])*np.sinh(self.Tt1o_local/(self.Tno_local-self.P[self.local_index]*1e-6)/self.a[self.local_index])
-        self.slipv2[self.local_index]=(2.0*self.V0)*np.exp(-self.state_local/self.a[self.local_index])*np.sinh(self.Tt2o_local/(self.Tno_local-self.P[self.local_index]*1e-6)/self.a[self.local_index])
-        #print(np.max(np.exp(-self.state_local/self.a[self.local_index])),rank)
-        t0 = MPI.Wtime()
-        self.slipv1=comm.allreduce(self.slipv1, op=MPI.SUM)
-        self.slipv2=comm.allreduce(self.slipv2, op=MPI.SUM)
+                file.write(f"{self.time:.6f} {slipv1_value:.6e} {slipv2_value:.6e} {slipv_value:.6e} {Tt1_value:.6e} {Tt2_value:.6e} {Tno_value:.6e}\n")
 
-        t1 = MPI.Wtime()
-        self.comm_time += (t1 - t0)
-        self.slipv=np.sqrt(self.slipv1*self.slipv1+self.slipv2*self.slipv2)
 
-        
-        indexmin=np.where(self.slipv<1e-30)[0]
-        if(len(indexmin)>0):
-            self.slipv[indexmin]=1e-30
-        #self.maxslipv0=np.max(self.slipv)
-        self.slip1=self.slip1+self.slipv1*h
-        self.slip2=self.slip2+self.slipv2*h
-        self.slip=np.sqrt(self.slip1*self.slip1+self.slip2*self.slip2)
+
+
+
+
+                
+                
         
 
         if(self.step%self.Para0['outsteps']==0):
@@ -262,15 +276,52 @@ class QDsim_gpumpi(QDsim.QDsim):
             self.comm_time += (t1 - t0)
             if(rank==0):
                 self.Tt=np.sqrt(self.Tt1o*self.Tt1o+self.Tt2o*self.Tt2o)
-                self.rake=np.arctan2(self.Tt2o,self.Tt1o)
                 self.fric=self.Tt/(self.Tno-self.P*1e-6)
         
+        #update temperature
+        if(self.Ifthermal==True):
+            Tempe,dTdt0,Tarr=self.Calc_T_implicit_mpi(h)
+            self.Tempe=Tempe
+            self.dTdt0=dTdt0
+            self.Tempearr=Tarr
+            if(self.step%self.Para0['outsteps']==0):
+                Tarr[self.index_]=0
+                Tempe[self.index_]=0
+                dTdt0[self.index_]=0
+                self.dTdt0=comm.allreduce(dTdt0, op=MPI.SUM)
+                self.Tempe=comm.allreduce(Tempe, op=MPI.SUM)
+                self.Tempearr=comm.allreduce(Tarr, op=MPI.SUM)
+
+        #update Pore pressure
+
+        if(self.Ifdila==True):
+            #comm.Allgatherv(sendbuf=state_yhk,recvbuf=(self.state, (self.counts, self.displs)))
+            Pre,dPdt0,Parr=self.Calc_P_implicit_mpi(h)
+            
+            self.dPdt0=dPdt0
+            self.P=Pre
+            self.Parr=Parr
+            if(self.step%self.Para0['outsteps']==0):
+                Parr[self.index_]=0
+                Pre[self.index_]=0
+                dPdt0[self.index_]=0
+                self.dPdt0=comm.allreduce(dPdt0, op=MPI.SUM)
+                self.P=comm.allreduce(Pre, op=MPI.SUM)
+                self.Parr=comm.allreduce(Parr, op=MPI.SUM)
+
+        
+
         return h,dtnext
     
     def simu_forward_mpi_LTM_tensor(self,dttry):
         
         cart_rank = self.cart_comm.Get_rank()
         row, col = self.cart_comm.Get_coords(cart_rank)
+        if not hasattr(self, '_rk_blocks_ready'):
+            row_blocks = self.row_comm.gather(self.local_blocks, root=0)
+            if col == 0:
+                self._rk_local_blocks = [block for blocks in row_blocks for block in blocks]
+            self._rk_blocks_ready = True
         slipv1=np.zeros(len(self.slipv1))
         slipv2=np.zeros(len(self.slipv2))
         slipv1[self.local_slipv_index]=self.slipv1[self.local_slipv_index]-self.slipvC[self.local_slipv_index]*np.cos(self.rake0[self.local_slipv_index])
@@ -365,11 +416,11 @@ class QDsim_gpumpi(QDsim.QDsim):
                 self.RK_time += (t1 - t0)
                 recvbuf_Relerror1 = np.zeros(1, dtype=np.float64) if cart_rank == 0 else np.empty(1, dtype=np.float64)
                 recvbuf_Relerror1 = np.ascontiguousarray(recvbuf_Relerror1)
-                self.diag_comm.Reduce(self.Relerrormax1, recvbuf_Relerror1, op=MPI.MAX, root=0)
+                self.diag_comm.Reduce(np.array([self.Relerrormax1], dtype=np.float64), recvbuf_Relerror1, op=MPI.MAX, root=0)
                 
                 recvbuf_Relerror2 = np.zeros(1, dtype=np.float64) if cart_rank == 0 else np.empty(1, dtype=np.float64)
                 recvbuf_Relerror2 = np.ascontiguousarray(recvbuf_Relerror2)
-                self.diag_comm.Reduce(self.Relerrormax2, recvbuf_Relerror2, op=MPI.MAX, root=0)
+                self.diag_comm.Reduce(np.array([self.Relerrormax2], dtype=np.float64), recvbuf_Relerror2, op=MPI.MAX, root=0)
                 if(cart_rank==0):
                     self.RelTol1=1e-4
                     self.RelTol2=1e-4
@@ -422,6 +473,7 @@ class QDsim_gpumpi(QDsim.QDsim):
                     h = dtnext  # update h for the next trial
             
             self.time=self.time+h
+            Tno_yhk,Tt1o_yhk,Tt2o_yhk=self._finish_scalar_step(h)
             #if(rank==0):
             #update slip rate and rake
             Tno_yhk[Tno_yhk<0.1]=0.1
@@ -432,32 +484,28 @@ class QDsim_gpumpi(QDsim.QDsim):
             
             #self.Tt_local=np.sqrt(Tt1o_yhk*Tt1o_yhk+Tt2o_yhk*Tt2o_yhk)
             #print('self.Tt1o',np.mean(self.Tt1o),np.mean(self.Tt2o))
-            self.slipv1[:]=0
-            self.slipv2[:]=0
-            self.slipv1[self.local_index]=(2.0*self.V0)*np.exp(-self.state_local/self.a[self.local_index])*np.sinh(self.Tt1o_local/(self.Tno_local-self.P[self.local_index]*1e-6)/self.a[self.local_index])
-            self.slipv2[self.local_index]=(2.0*self.V0)*np.exp(-self.state_local/self.a[self.local_index])*np.sinh(self.Tt2o_local/(self.Tno_local-self.P[self.local_index]*1e-6)/self.a[self.local_index])
-            #print(np.max(np.sinh(self.Tt1o_local/self.Tno_local/self.a[self.local_index])),rank)
-            #print(np.max(np.exp(-self.state_local/self.a[self.local_index])),rank,len(self.local_index))
-            # slipv1_rec = np.zeros(len(self.slipv1), dtype=np.float64) if cart_rank == 0 else np.empty(1, dtype=np.float64)
-            # diag_comm.Reduce(self.slipv1, slipv1_rec, op=MPI.SUM, root=0)
-            t0 = MPI.Wtime()
-            self.slipv1=self.diag_comm.allreduce(self.slipv1, op=MPI.SUM)
-            self.slipv2=self.diag_comm.allreduce(self.slipv2, op=MPI.SUM)
-            t1 = MPI.Wtime()
-            self.comm_time += (t1 - t0)
+            for i in range(len(self.fault_station_index)):
+                station_index = self.fault_station_index[i]
+                matches = np.flatnonzero(self.local_index == station_index)
+                #print(rank,i,self.fault_station_index)
+                if matches.size > 0:
+                    # print(rank,i,self.fault_station_index)
+                    local_station_index = int(matches[0])
+                    file = open(self.mpioutdirectory+'/'+self.faultstation_names[i], "a")
+                    # slip1_value = self.slip1[station_index]
+                    # slip2_value = self.slip2[station_index]
+                    # slip_value = self.slip[station_index]
+                    slipv1_value = self.slipv1[station_index]
+                    slipv2_value = self.slipv2[station_index]
+                    slipv_value = self.slipv[station_index]
+                    Tt1_value = self.Tt1o_local[local_station_index]
+                    Tt2_value = self.Tt2o_local[local_station_index]
+                    Tno_value = self.Tno_local[local_station_index]
+    
+                    file.write(f"{self.time:.6f} {slipv1_value:.6e} {slipv2_value:.6e} {slipv_value:.6e} {Tt1_value:.6e} {Tt2_value:.6e} {Tno_value:.6e}\n")
 
-            self.slipv=np.sqrt(self.slipv1*self.slipv1+self.slipv2*self.slipv2)
-            
-            #self.slipv=diag_comm.allreduce(self.slipv, op=MPI.SUM)
-            indexmin=np.where(self.slipv<1e-30)[0]
-            if(len(indexmin)>0):
-                self.slipv[indexmin]=1e-30
-            #self.maxslipv0=np.max(self.slipv)
-            #print(self.Tno.shape,rank,cart_rank)
-            #update slip
-            self.slip1=self.slip1+self.slipv1*h
-            self.slip2=self.slip2+self.slipv2*h
-            self.slip=np.sqrt(self.slip1*self.slip1+self.slip2*self.slip2)
+
+
             if(self.step%self.Para0['outsteps']==0):
                 
                 self.Tno[:]=0
@@ -492,33 +540,18 @@ class QDsim_gpumpi(QDsim.QDsim):
                 if(cart_rank==0):
                     self.state=recvbuf
 
-                if(self.Ifthermal==True):
-                    self.Tempe[self.index_]=0
-                    recvbuf = np.zeros(len(self.Tempe), dtype=np.float64) 
-                    self.diag_comm.Reduce(self.Tempe, recvbuf, op=MPI.SUM, root=0)
-                    if(cart_rank==0):
-                        self.Tempe=recvbuf
-
                 if(self.Ifdila==True):
-                    self.P[self.index_]=0
-                    recvbuf = np.zeros(len(self.P), dtype=np.float64) 
-                    self.diag_comm.Reduce(self.P, recvbuf, op=MPI.SUM, root=0)
-                    if(cart_rank==0):
-                        self.P=recvbuf
-                    
                     self.porosity[self.index_]=0
-                    recvbuf = np.zeros(len(self.porosity), dtype=np.float64) 
+                    recvbuf = np.zeros(len(self.porosity), dtype=np.float64)
                     self.diag_comm.Reduce(self.porosity, recvbuf, op=MPI.SUM, root=0)
                     if(cart_rank==0):
                         self.porosity=recvbuf
-                    
-                
+
                 t1 = MPI.Wtime()
                 self.comm_time += (t1 - t0)
 
                 if(cart_rank==0):
                     self.Tt=np.sqrt(self.Tt1o*self.Tt1o+self.Tt2o*self.Tt2o)
-                    self.rake=np.arctan2(self.Tt2o,self.Tt1o)
                     self.fric=self.Tt/(self.Tno-self.P*1e-6)
                 
                 
@@ -526,8 +559,13 @@ class QDsim_gpumpi(QDsim.QDsim):
 
                 
 
+        # Keep worker ranks on the accepted time step, including after retries.
+        step_data = np.array([h, dtnext, self.time], dtype=np.float64) if col == 0 else np.zeros(3)
+        self.row_comm.Bcast(step_data, root=diag_rank_in_row)
+        h, dtnext, self.time = step_data
+        self.dtnext = dtnext
         #bcast slipv in row_comm
-        t1 = MPI.Wtime()
+        t0 = MPI.Wtime()
         self.row_comm.Bcast(self.slipv1, root=diag_rank_in_row)
         self.row_comm.Bcast(self.slipv2, root=diag_rank_in_row)
         t1 = MPI.Wtime()
@@ -538,12 +576,26 @@ class QDsim_gpumpi(QDsim.QDsim):
                 self.Tempe=Tempe
                 self.dTdt0=dTdt0
                 self.Tempearr=Tarr
+                if(self.step%self.Para0['outsteps']==0):
+                    Tarr[self.index_]=0
+                    Tempe[self.index_]=0
+                    dTdt0[self.index_]=0
+                    self.dTdt0=self.diag_comm.allreduce(dTdt0, op=MPI.SUM)
+                    self.Tempe=self.diag_comm.allreduce(Tempe, op=MPI.SUM)
+                    self.Tempearr=self.diag_comm.allreduce(Tarr, op=MPI.SUM)
         if(self.Ifdila==True):
             if(col == 0):
                 Pre,dPdt0,Parr=self.Calc_P_implicit_mpi(h)
                 self.dPdt0=dPdt0
                 self.P=Pre
                 self.Parr=Parr
+                if(self.step%self.Para0['outsteps']==0):
+                    Parr[self.index_]=0
+                    Pre[self.index_]=0
+                    dPdt0[self.index_]=0
+                    self.dPdt0=self.diag_comm.allreduce(dPdt0, op=MPI.SUM)
+                    self.P=self.diag_comm.allreduce(Pre, op=MPI.SUM)
+                    self.Parr=self.diag_comm.allreduce(Parr, op=MPI.SUM)
         return h,dtnext
 
 
@@ -555,7 +607,7 @@ class QDsim_gpumpi(QDsim.QDsim):
         self.init_mpi_local_variables()
         
         totaloutputsteps=int(self.Para0['totaloutputsteps']) #total time steps
-        file = open(self.state_file, "a", encoding="utf-8")
+        file = open(self.mpioutdirectory+'/'+self.state_file, "a", encoding="utf-8")
         self.monitor_total_memory(comm, prefix=f"Init:")
         file.write('iteration time_step(s) maximum_slip1_rate(m/s) maximum_slip2_rate(m/s) time(s) time(d)\n')
         
@@ -591,7 +643,7 @@ class QDsim_gpumpi(QDsim.QDsim):
                 #     break
                 #Output vtk once every outsteps
                 outsteps=int(self.Para0['outsteps'])
-                directory='out_vtu'
+                directory=self.mpioutdirectory+'/out_vtu'
                 if not os.path.exists(directory):
                     os.mkdir(directory)
                 #output slipv and Tt
@@ -600,7 +652,7 @@ class QDsim_gpumpi(QDsim.QDsim):
                     SLIPV=np.array(SLIPV)
                     Tt=np.array(Tt)
                     if(self.Para0['outputSLIPV']==True):
-                        directory1='out_slipvTt'
+                        directory1=self.mpioutdirectory+'/out_slipvTt'
                         if not os.path.exists(directory1):
                             os.mkdir(directory1)
                         np.save(directory1+'/slipv_%d'%i,SLIPV)

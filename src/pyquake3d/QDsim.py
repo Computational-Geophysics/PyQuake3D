@@ -272,6 +272,7 @@ class QDsim:
         #         logging.StreamHandler()
         #     ]
         # )
+        self.init_ftc()
         
         
         print('First Lamé constants',self.lambda_)
@@ -522,6 +523,53 @@ class QDsim:
         return s
 
     
+    def init_ftc(self):
+        self.IfFTC=self.Para0.get('If FTC', False)
+        # FTC RK error tolerances
+        self.ftc_rtol = 1.0e-4
+        self.ftc_atol = 1.0e-8    #changed ftc截断容错
+        
+        if self.IfFTC:   #changed  ftc检查，动态弱化快速愈合效应检查
+            if not self.Ifthermal:
+                raise ValueError(
+                    'FTC requires "If thermal: True" '
+                    'because Tcore is needed.'
+                )
+
+            self.ftc_dmu_max = self.Para0['FTC maximum weakening']
+            self.ftc_Vw = self.Para0['FTC weakening velocity']
+            self.ftc_L = self.Para0['FTC characteristic distance']
+
+            # Low-velocity KQT
+            self.ftc_k_low = self.Para0['FTC healing rate low velocity']
+            self.ftc_Q_low = self.Para0['FTC activation energy low velocity']
+            self.ftc_Tref_low_C = self.Para0['FTC reference temperature low velocity']
+
+            # High-velocity KQT
+            self.ftc_k_high = self.Para0['FTC healing rate high velocity']
+            self.ftc_Q_high = self.Para0['FTC activation energy high velocity']
+            self.ftc_Tref_high_C = self.Para0['FTC reference temperature high velocity']
+
+            self.ftc_Vtransition = self.Para0['FTC KQT transition velocity']
+
+            # Do not call this self.c.
+            # self.c is already heat capacity.
+            self.ftc_target = self.Para0.get('FTC residual target c', 0.0,)
+
+            # Gas constant, J mol^-1 K^-1
+            self.Rgas = 8.31446261815324
+            for name in ('ftc_Vw', 'ftc_L', 'ftc_Vtransition'):
+                value = getattr(self, name)
+                if not np.isfinite(value) or value <= 0:
+                    raise ValueError(f'{name} must be positive and finite.')
+            for name in ('ftc_dmu_max', 'ftc_k_low', 'ftc_k_high', 'ftc_Q_low', 'ftc_Q_high', 'ftc_target'):
+                value = getattr(self, name)
+                if not np.isfinite(value) or value < 0:
+                    raise ValueError(f'{name} must be nonnegative and finite.')
+            for name in ('ftc_Tref_low_C', 'ftc_Tref_high_C'):
+                value = getattr(self, name)
+                if not np.isfinite(value) or value <= -273.15:
+                    raise ValueError(f'{name} must be above absolute zero.')
 
     def start(self):
         start_time = MPI.Wtime()
@@ -1151,6 +1199,9 @@ class QDsim:
             # self.At=self.Para0['Ratio of thermal expansivity to compressibility']
             # self.c=self.Para0['Heat capacity']
             # self.T0=self.Para0['Initial temperature']
+        
+        if(self.IfFTC==True):   #changed 动态弱化快速愈合参数
+            self.ftc_Vw = np.full(N,self.ftc_Vw,dtype=np.float64)  #changed
             
         traction=[]
         #print('trac_nor',trac_nor)
@@ -1266,6 +1317,8 @@ class QDsim:
         self.slip1=np.zeros(N)
         self.slip2=np.zeros(N)
         self.slip=np.zeros(N)
+
+        self.ftc = np.zeros(N, dtype=np.float64)
 
         self.arriT=np.ones(N)*1e9
 
@@ -1463,6 +1516,10 @@ class QDsim:
         # self.b=mesh0.cell_data['b']
         # self.dc=mesh0.cell_data['dc']
 
+        if self.IfFTC and 'FTC' in mesh0.cell_data:
+            self.ftc = mesh0.cell_data['FTC'].astype(np.float64)
+        else:
+            self.ftc = np.zeros_like(self.state,dtype=np.float64)
 
 
     #read initial condition from outside files
@@ -1493,6 +1550,10 @@ class QDsim:
         
         self.shear_loading=values[:Ncell,8]
         self.normal_loading=values[:Ncell,9]
+        if self.IfFTC and values.shape[1] >= 13:
+            self.ftc_Vw = values[:Ncell,12].copy()
+            if not np.all(np.isfinite(self.ftc_Vw)) or np.any(self.ftc_Vw <= 0):
+                raise ValueError('FTC weakening velocities (column 13) must be positive and finite.')
 
         try:
             self.P=values[:Ncell,10]*1e6
@@ -1548,62 +1609,143 @@ class QDsim:
             T_globalarr.append(T_global)  
         self.T_globalarr=np.array(T_globalarr)
 
-    #Partial derivative calculation
-    def derivative_(self,Tno,Tt1o,Tt2o,state):
-        Tno=Tno*1e6
-        Tt1o=Tt1o*1e6
-        Tt2o=Tt2o*1e6
-        
-        P=self.P[self.local_index]
-        dPdt=self.dPdt0[self.local_index]
-        AdotV1=self.AdotV1[self.local_index]
-        AdotV2=self.AdotV2[self.local_index]
-        shear_loading=self.shear_loading[self.local_index]
-        dsigmadt=self.dsigmadt[self.local_index]
-        slipv=self.slipv[self.local_index]
 
-        def safe_exp(x, max_value=700):  #Limit the maximum value of the exponent
-            return np.exp(np.clip(x, -max_value, max_value))
 
-        def safe_cosh(x, max_value=700):  # Use the exponential form of cosh to avoid overflow
-            x = np.clip(x, -max_value, max_value)
-            return (np.exp(x) + np.exp(-x)) / 2
+    def _stage_elastic_rates_local(self, u1, u2):
+        blocks = getattr(self, '_rk_local_blocks', self.local_blocks)
+        AdotV1, AdotV2, dsigmadt = self.tree_block.blocks_process_MVM(u1, u2, blocks)
+        if self.fix_Tn:
+            dsigmadt = np.zeros(len(u1), dtype=np.float64)
+        return np.array([dsigmadt, AdotV1, AdotV2])
 
-        def safe_sinh(x, max_value=700):  # Use the exponential form of sinh to avoid overflow
-            x = np.clip(x, -max_value, max_value)
-            return (np.exp(x) - np.exp(-x)) / 2
+    def _rk_comm(self):
+        return self.diag_comm if self.Lt_jud else comm
 
-        # Parameters and formula
-        V0 = self.V0
-        a = self.a[self.local_index]
-        b = self.b[self.local_index]
-        dc = self.dc[self.local_index]
-        f0 = self.f0[self.local_index]
+    def _update_stage_elastic_mpi(self, slipv):
+        velocity = np.zeros(len(self.slipv), dtype=np.float64)
+        velocity[self.local_index] = slipv
+        velocity = self._rk_comm().allreduce(velocity, op=MPI.SUM)
+        u1 = velocity * np.cos(self.rake) - self.slipvC * np.cos(self.rake0)
+        u2 = velocity * np.sin(self.rake) - self.slipvC * np.sin(self.rake0)
+        rates = self._rk_comm().allreduce(self._stage_elastic_rates_local(u1, u2), op=MPI.SUM)
+        self.dsigmadt = rates[0] + self.normal_loading
+        self.AdotV1, self.AdotV2 = rates[1], rates[2]
 
-        #theta=dc/V0*np.exp((state-f0)/b)
-        #dthetadt=1.0-self.slipv*theta/dc
-        #dthetadt=-theta*self.slipv/dc*np.log(theta*self.slipv/dc)
-        # slipv1 = self.slipv1
-        # slipv2 = self.slipv2
-        # slipv_gpu=np.sqrt(slipv1*slipv1+slipv2*slipv2)
+    def update_ftc(self,slipv,state,ftc):
+        #if self.IfFTC:  #changed 当前的Ftc对弱化与愈合效应进行隔离，表明高速弱化，低速愈合，当他们被同时放在一起的时候，恒定的高速摩擦会出现以下情况。
+        # 在摩擦初期，高速导致摩擦快速下降，并且升温，如果高速也打开愈合效应，则会出现同震期间的愈合行为，弱化导致的摩擦下降很快被愈合抹平
+        Vsafe = np.maximum(slipv, np.finfo(np.float64).tiny,)
+        # Target coseismic weakening
+        Vw_local = self.ftc_Vw[self.local_index]  #changed
+        delta_mu_w = (self.ftc_dmu_max * np.maximum(1.0 - Vw_local / Vsafe, 0.0))
 
-        #print('Tno-P:',np.max(Tno-P),np.min(Tno-P))
-        
-        # Compute the formula
-        dV1dtau = 2 * V0 / (a * (Tno-P)) * safe_exp(-state / a) * safe_cosh(Tt1o / (a * (Tno-P)))
-        dV2dtau = 2 * V0 / (a * (Tno-P)) * safe_exp(-state / a) * safe_cosh(Tt2o / (a * (Tno-P)))
-        dV1dsigma = -2 * V0 * Tt1o / (a * (Tno-P)**2) * safe_exp(-state / a) * safe_cosh(Tt1o / (a * (Tno-P)))
-        dV2dsigma = -2 * V0 * Tt2o / (a * (Tno-P)**2) * safe_exp(-state / a) * safe_cosh(Tt2o / (a * (Tno-P)))
-        dV1dstate = -2 * V0 / a * safe_exp(-state / a) * safe_sinh(Tt1o / (a * (Tno-P)))
-        dV2dstate = -2 * V0 / a * safe_exp(-state / a) * safe_sinh(Tt2o / (a * (Tno-P)))
-        dstatedt = b / dc * (V0 * safe_exp((f0 - state) / b) - slipv)
-        
-        
-        
-        dtau1dt=(AdotV1+shear_loading-self.mu/(2.0*self.Cs)*(dV1dsigma*(dsigmadt-dPdt)+dV1dstate*dstatedt))/(1.0+self.mu/(2.0*self.Cs)*dV1dtau)
-        dtau2dt=(AdotV2+shear_loading-self.mu/(2.0*self.Cs)*(dV2dsigma*(dsigmadt-dPdt)+dV2dstate*dstatedt))/(1.0+self.mu/(2.0*self.Cs)*dV2dtau)
+        # Hard KQT switch
+        high_velocity = (slipv >= self.ftc_Vtransition)
 
-        return dstatedt,dsigmadt*1e-6,dtau1dt*1e-6,dtau2dt*1e-6
+        k_eff = np.where(high_velocity, self.ftc_k_high, self.ftc_k_low)
+
+        Q_eff = np.where(high_velocity, self.ftc_Q_high, self.ftc_Q_low)
+
+        Tref_eff_C = np.where(high_velocity, self.ftc_Tref_high_C, self.ftc_Tref_low_C)
+
+        # Convert both temperatures to Kelvin here
+        Tref_eff_K = Tref_eff_C + 273.15
+        Tcore_K = (self.Tempe[self.local_index] + 273.15)
+
+        Tref_eff_K = np.maximum(Tref_eff_K, 1.0)
+        Tcore_K = np.maximum(Tcore_K, 1.0)
+
+        reaction_rate = (k_eff * np.exp((Q_eff / self.Rgas) * (1.0 / Tref_eff_K - 1.0 / Tcore_K)))
+
+        # Equivalent to:
+        # V/L*(Delta_mu_w-ftc)
+        # - reaction_rate*(ftc-c)
+        dftcdt = (slipv / self.ftc_L * (delta_mu_w - ftc) + reaction_rate * (self.ftc_target - ftc))
+
+        # state = f0 + b*psi psi_eff = state - ftc
+        psi_eff = state - ftc #changed 这里如果用psi eff的话，把psi eff视为原来的state - ftc，当没有ftc时，退回state
+
+        return dftcdt, psi_eff
+
+    # One speed magnitude; the rake stays fixed within an attempted RK step.
+    def derivative_(self, Tno, slipv, state, ftc=None):
+        self._update_stage_elastic_mpi(slipv)
+        idx = self.local_index
+        a, b, dc, f0 = self.a[idx], self.b[idx], self.dc[idx], self.f0[idx]
+
+        if self.IfFTC:  #changed 当前的Ftc对弱化与愈合效应进行隔离，表明高速弱化，低速愈合，当他们被同时放在一起的时候，恒定的高速摩擦会出现以下情况
+            if ftc is None:
+                ftc = self.ftc_local
+            dftcdt, psi_eff=self.update_ftc(slipv,state,ftc)
+        else:
+            dftcdt = np.zeros_like(state)
+            psi_eff = state  
+
+        effective_normal = Tno * 1e6 - self.P[idx]
+        dnormaldt = self.dsigmadt[idx] - self.dPdt0[idx]
+        # Invert the scalar regularized friction law (tractions here are Pa).
+        #psi = state - ftc if self.IfFTC else state
+        psi=psi_eff
+        scale = 2.0 * self.V0 * np.exp(np.clip(-psi / a, -700, 700))
+        q = np.arcsinh(slipv / scale)
+        tau = a * effective_normal * q
+        dVdtau = np.hypot(scale, slipv) / (a * effective_normal)
+        dVdsigma = -dVdtau * tau / effective_normal
+        dVdstate = -slipv / a
+        dstatedt = b / dc * (self.V0 * np.exp(np.clip((f0-state)/b, -700, 700)) - slipv)
+        rake = self.rake[idx]
+        elastic_rate = self.AdotV1[idx]*np.cos(rake) + self.AdotV2[idx]*np.sin(rake)
+        eta = self.mu / (2.0*self.Cs)
+        dpsidt = dstatedt - dftcdt
+        dtaudt = (elastic_rate + self.shear_loading[idx] - eta*(dVdsigma*dnormaldt + dVdstate*dpsidt)) / (1.0 + eta*dVdtau)
+        dVdt = dVdtau*dtaudt + dVdsigma*dnormaldt + dVdstate*dpsidt
+        return dstatedt, self.dsigmadt[idx]*1e-6, dVdt,dftcdt
+
+    def _finish_scalar_step(self, h):
+        # Called only after acceptance: rejected trials never change slip or rake.
+        idx = self.local_index
+        values = np.zeros((2, len(self.slipv)), dtype=np.float64)
+        values[0, idx] = self._rk_velocity
+        values[1, idx] = self._rk_slip_increment
+        velocity, slip_increment = self._rk_comm().allreduce(values, op=MPI.SUM)
+        if self.IfFTC:
+            ftc_values = np.zeros(len(self.slipv), dtype=np.float64)
+            ftc_values[idx] = self._rk_ftc
+            self.ftc = self._rk_comm().allreduce(ftc_values, op=MPI.SUM)
+            self.ftc_local = self._rk_ftc.copy()
+        c, s = np.cos(self.rake), np.sin(self.rake)
+        ds1, ds2 = slip_increment*c, slip_increment*s
+        u1 = ds1 - h*self.slipvC*np.cos(self.rake0)
+        u2 = ds2 - h*self.slipvC*np.sin(self.rake0)
+        delta = self._rk_comm().allreduce(self._stage_elastic_rates_local(u1, u2), op=MPI.SUM)
+        eta = self.mu / (2.0*self.Cs)
+        # Incremental G*delta_slip equals G*accumulated_slip plus the initial
+        # traction, and preserves the reference traction when restarting.
+        t1 = self.Tt1o_local + (delta[1, idx] + h*self.shear_loading[idx]*c[idx] + eta*self.slipv[idx]*c[idx])*1e-6
+        t2 = self.Tt2o_local + (delta[2, idx] + h*self.shear_loading[idx]*s[idx] + eta*self.slipv[idx]*s[idx])*1e-6
+        rake = np.where(np.hypot(t1, t2) > 0, np.arctan2(t2, t1), self.rake[idx])
+        angles = np.zeros(len(self.rake), dtype=np.float64)
+        angles[idx] = rake
+        self.rake = self._rk_comm().allreduce(angles, op=MPI.SUM)
+        self.slip1 += ds1
+        self.slip2 += ds2
+        self.slip = np.hypot(self.slip1, self.slip2)
+        self.slipv = velocity
+        self.slipv1 = velocity*np.cos(self.rake)
+        self.slipv2 = velocity*np.sin(self.rake)
+        # The accepted normal stress is recomputed here from end-step slip;
+        # retain its actual addition residual, not the RK-stage normal residual.
+        saved = getattr(self, '_rk_compensation', {})
+        normal, normal_residual = self._rk_compensated_add(
+            self.Tno_local, (delta[0, idx] + h*self.normal_loading[idx])*1e-6,
+            saved.get('Tno', np.zeros_like(self.Tno_local)))
+        normal_residual[normal < 0.1] = 0.0
+        self._rk_compensation = {
+            name: value.copy() for name, value in
+            getattr(self, '_rk_trial_compensation', {}).items()
+        }
+        self._rk_compensation['Tno'] = normal_residual
+        return normal, t1-eta*self.slipv1[idx]*1e-6, t2-eta*self.slipv2[idx]*1e-6
 
     def Calc_Pmatrix(self):
         K=len(self.zp)
@@ -1766,11 +1908,13 @@ class QDsim:
     
 
     def init_mpi_local_variables(self):
+        self._rk_compensation = {}
         if(self.Lt_jud==False):
             self.Tno_local=self.Tno[self.local_index]
             self.Tt1o_local=self.Tt1o[self.local_index]
             self.Tt2o_local=self.Tt2o[self.local_index]
             self.state_local=self.state[self.local_index]
+            self.ftc_local=self.ftc[self.local_index]
             self.counts = comm.gather(len(self.local_index), root=0)
             self.displs = comm.gather(self.local_index[0], root=0)
             self.index0=np.arange(0,len(self.eleVec),1)
@@ -1783,6 +1927,7 @@ class QDsim:
                 #print(np.max(self.Tt1o_local),rank)
                 self.Tt2o_local=self.Tt2o[self.local_index]
                 self.state_local=self.state[self.local_index]
+                self.ftc_local=self.ftc[self.local_index]
                 self.counts = self.diag_comm.gather(len(self.local_index), root=0)
                 self.displs = self.diag_comm.gather(self.local_index[0], root=0)
                 self.index0=np.arange(0,len(self.eleVec),1)
@@ -1792,6 +1937,7 @@ class QDsim:
                 self.Tt1o_local=None
                 self.Tt2o_local=None
                 self.state_local=None
+                self.ftc_local=None
                 self.index0=None
                 self.index_ = None
             
@@ -1803,6 +1949,11 @@ class QDsim:
         
         cart_rank = self.cart_comm.Get_rank()
         row, col = self.cart_comm.Get_coords(cart_rank)
+        if not hasattr(self, '_rk_blocks_ready'):
+            row_blocks = self.row_comm.gather(self.local_blocks, root=0)
+            if col == 0:
+                self._rk_local_blocks = [block for blocks in row_blocks for block in blocks]
+            self._rk_blocks_ready = True
         # color = 0 if row == col else MPI.UNDEFINED  # Diagonal processes: color=0，others: UNDEFINED
         # diag_comm = comm.Split(color, key=cart_rank)
         #print('start:',self.step,self.Tno.shape,rank,cart_rank)
@@ -1871,11 +2022,11 @@ class QDsim:
                 
                 recvbuf_Relerror1 = np.zeros(1, dtype=np.float64) if cart_rank == 0 else np.empty(1, dtype=np.float64)
                 recvbuf_Relerror1 = np.ascontiguousarray(recvbuf_Relerror1)
-                self.diag_comm.Reduce(self.Relerrormax1, recvbuf_Relerror1, op=MPI.MAX, root=0)
+                self.diag_comm.Reduce(np.array([self.Relerrormax1], dtype=np.float64), recvbuf_Relerror1, op=MPI.MAX, root=0)
                 
                 recvbuf_Relerror2 = np.zeros(1, dtype=np.float64) if cart_rank == 0 else np.empty(1, dtype=np.float64)
                 recvbuf_Relerror2 = np.ascontiguousarray(recvbuf_Relerror2)
-                self.diag_comm.Reduce(self.Relerrormax2, recvbuf_Relerror2, op=MPI.MAX, root=0)
+                self.diag_comm.Reduce(np.array([self.Relerrormax2], dtype=np.float64), recvbuf_Relerror2, op=MPI.MAX, root=0)
                 if(cart_rank==0):
                     self.RelTol1=1e-4
                     self.RelTol2=1e-4
@@ -1928,6 +2079,7 @@ class QDsim:
                     h = dtnext  # Update step size
             
             self.time=self.time+h
+            Tno_yhk,Tt1o_yhk,Tt2o_yhk=self._finish_scalar_step(h)
             #if(rank==0):
             #update slip rate and rake
             Tno_yhk[Tno_yhk<0.1]=0.1
@@ -1938,31 +2090,6 @@ class QDsim:
             
             #self.Tt_local=np.sqrt(Tt1o_yhk*Tt1o_yhk+Tt2o_yhk*Tt2o_yhk)
             #print('self.Tt1o',np.mean(self.Tt1o),np.mean(self.Tt2o))
-            self.slipv1[:]=0
-            self.slipv2[:]=0
-            self.slipv1[self.local_index]=(2.0*self.V0)*np.exp(-self.state_local/self.a[self.local_index])*np.sinh(self.Tt1o_local/(self.Tno_local-self.P[self.local_index]*1e-6)/self.a[self.local_index])
-            self.slipv2[self.local_index]=(2.0*self.V0)*np.exp(-self.state_local/self.a[self.local_index])*np.sinh(self.Tt2o_local/(self.Tno_local-self.P[self.local_index]*1e-6)/self.a[self.local_index])
-            #print(np.max(np.sinh(self.Tt1o_local/self.Tno_local/self.a[self.local_index])),rank)
-            #print(np.max(np.exp(-self.state_local/self.a[self.local_index])),rank,len(self.local_index))
-            # slipv1_rec = np.zeros(len(self.slipv1), dtype=np.float64) if cart_rank == 0 else np.empty(1, dtype=np.float64)
-            # diag_comm.Reduce(self.slipv1, slipv1_rec, op=MPI.SUM, root=0)
-            t0 = MPI.Wtime()
-            self.slipv1=self.diag_comm.allreduce(self.slipv1, op=MPI.SUM)
-            self.slipv2=self.diag_comm.allreduce(self.slipv2, op=MPI.SUM)
-            t1 = MPI.Wtime()
-            self.comm_time += (t1 - t0)
-
-            self.slipv=np.sqrt(self.slipv1*self.slipv1+self.slipv2*self.slipv2)
-            
-            #self.slipv=diag_comm.allreduce(self.slipv, op=MPI.SUM)
-            indexmin=np.where(self.slipv<1e-30)[0]
-            #if(len(indexmin)>0):
-            #    self.slipv[indexmin]=1e-30
-            #self.maxslipv0=np.max(self.slipv)
-            #print(self.Tno.shape,rank,cart_rank)
-            self.slip1=self.slip1+self.slipv1*h
-            self.slip2=self.slip2+self.slipv2*h
-            self.slip=np.sqrt(self.slip1*self.slip1+self.slip2*self.slip2)
 
 
             for i in range(len(self.fault_station_index)):
@@ -2020,34 +2147,19 @@ class QDsim:
                 if(cart_rank==0):
                     self.state=recvbuf
 
-                if(self.Ifthermal==True):
-                    self.Tempe[self.index_]=0
-                    recvbuf = np.zeros(len(self.Tempe), dtype=np.float64) 
-                    self.diag_comm.Reduce(self.Tempe, recvbuf, op=MPI.SUM, root=0)
-                    if(cart_rank==0):
-                        self.Tempe=recvbuf
-
                 if(self.Ifdila==True):
-                    self.P[self.index_]=0
-                    recvbuf = np.zeros(len(self.P), dtype=np.float64) 
-                    self.diag_comm.Reduce(self.P, recvbuf, op=MPI.SUM, root=0)
-                    if(cart_rank==0):
-                        self.P=recvbuf
-                    
                     self.porosity[self.index_]=0
-                    recvbuf = np.zeros(len(self.porosity), dtype=np.float64) 
+                    recvbuf = np.zeros(len(self.porosity), dtype=np.float64)
                     self.diag_comm.Reduce(self.porosity, recvbuf, op=MPI.SUM, root=0)
                     if(cart_rank==0):
                         self.porosity=recvbuf
-                    
-                
+
                 t1 = MPI.Wtime()
                 self.comm_time += (t1 - t0)
 
                 if(cart_rank==0):
                     self.Tt=np.sqrt(self.Tt1o*self.Tt1o+self.Tt2o*self.Tt2o)
                     #self.rake=np.arctan2(self.Tt2o,self.Tt1o)
-                    self.rake=np.arctan2(self.slip2,self.slip1)
                     self.fric=self.Tt/(self.Tno-self.P*1e-6)
                 
                 
@@ -2055,8 +2167,13 @@ class QDsim:
 
                 
 
+        # Keep worker ranks on the accepted time step, including after retries.
+        step_data = np.array([h, dtnext, self.time], dtype=np.float64) if col == 0 else np.zeros(3)
+        self.row_comm.Bcast(step_data, root=diag_rank_in_row)
+        h, dtnext, self.time = step_data
+        self.dtnext = dtnext
         #bcast slipv in row_comm
-        t1 = MPI.Wtime()
+        t0 = MPI.Wtime()
         self.row_comm.Bcast(self.slipv1, root=diag_rank_in_row)
         self.row_comm.Bcast(self.slipv2, root=diag_rank_in_row)
         t1 = MPI.Wtime()
@@ -2067,12 +2184,26 @@ class QDsim:
                 self.Tempe=Tempe
                 self.dTdt0=dTdt0
                 self.Tempearr=Tarr
+                if(self.step%self.Para0['outsteps']==0):
+                    Tarr[self.index_]=0
+                    Tempe[self.index_]=0
+                    dTdt0[self.index_]=0
+                    self.dTdt0=self.diag_comm.allreduce(dTdt0, op=MPI.SUM)
+                    self.Tempe=self.diag_comm.allreduce(Tempe, op=MPI.SUM)
+                    self.Tempearr=self.diag_comm.allreduce(Tarr, op=MPI.SUM)
         if(self.Ifdila==True):
             if(col == 0):
                 Pre,dPdt0,Parr=self.Calc_P_implicit_mpi(h)
                 self.dPdt0=dPdt0
                 self.P=Pre
                 self.Parr=Parr
+                if(self.step%self.Para0['outsteps']==0):
+                    Parr[self.index_]=0
+                    Pre[self.index_]=0
+                    dPdt0[self.index_]=0
+                    self.dPdt0=self.diag_comm.allreduce(dPdt0, op=MPI.SUM)
+                    self.P=self.diag_comm.allreduce(Pre, op=MPI.SUM)
+                    self.Parr=self.diag_comm.allreduce(Parr, op=MPI.SUM)
         return h,dtnext
 
     
@@ -2081,30 +2212,30 @@ class QDsim:
     #forward modelling
     def simu_forward_mpi_(self,dttry):
         #print('self.P',np.max(self.P))
-        slipv1=self.slipv1-self.slipvC*np.cos(self.rake0)
-        slipv2=self.slipv2-self.slipvC*np.sin(self.rake0)
-        #Calculating Kv first
-        #comm.Barrier()
-        t0 = MPI.Wtime()
+        # slipv1=self.slipv1-self.slipvC*np.cos(self.rake0)
+        # slipv2=self.slipv2-self.slipvC*np.sin(self.rake0)
+        # #Calculating Kv first
+        # #comm.Barrier()
+        # t0 = MPI.Wtime()
        
 
-        AdotV1,AdotV2,dsigmadt=self.tree_block.blocks_process_MVM(slipv1,slipv2,self.local_blocks)
-        if(self.fix_Tn==True):
-            dsigmadt=self.normal_loading
-        else:
-            dsigmadt=dsigmadt+self.normal_loading
+        # AdotV1,AdotV2,dsigmadt=self.tree_block.blocks_process_MVM(slipv1,slipv2,self.local_blocks)
+        # if(self.fix_Tn==True):
+        #     dsigmadt=self.normal_loading
+        # else:
+        #     dsigmadt=dsigmadt+self.normal_loading
 
         
-        t1 = MPI.Wtime()
-        self.compute_time += (t1 - t0)
+        # t1 = MPI.Wtime()
+        # self.compute_time += (t1 - t0)
         
-        #Combine results from all ranks
-        t0 = MPI.Wtime()
-        self.dsigmadt=comm.allreduce(dsigmadt, op=MPI.SUM)
-        self.AdotV1=comm.allreduce(AdotV1, op=MPI.SUM)
-        self.AdotV2=comm.allreduce(AdotV2, op=MPI.SUM)
-        t1 = MPI.Wtime()
-        self.comm_time += (t1 - t0)
+        # #Combine results from all ranks
+        # t0 = MPI.Wtime()
+        # self.dsigmadt=comm.allreduce(dsigmadt, op=MPI.SUM)
+        # self.AdotV1=comm.allreduce(AdotV1, op=MPI.SUM)
+        # self.AdotV2=comm.allreduce(AdotV2, op=MPI.SUM)
+        # t1 = MPI.Wtime()
+        # self.comm_time += (t1 - t0)
         #print(np.max(self.AdotV1),rank)
 
         #comm.Barrier()
@@ -2152,6 +2283,7 @@ class QDsim:
                     sys.exit()
 
         self.time=self.time+h
+        Tno_yhk,Tt1o_yhk,Tt2o_yhk=self._finish_scalar_step(h)
 
         #if(rank==0):
         #update slip rate and rake
@@ -2171,34 +2303,6 @@ class QDsim:
         
         #self.Tt_local=np.sqrt(Tt1o_yhk*Tt1o_yhk+Tt2o_yhk*Tt2o_yhk)
         #print('self.Tt1o',np.mean(self.Tt1o),np.mean(self.Tt2o))
-        self.slipv1[:]=0
-        self.slipv2[:]=0
-        self.slipv1[self.local_index]=(2.0*self.V0)*np.exp(-self.state_local/self.a[self.local_index])*np.sinh(self.Tt1o_local/(self.Tno_local-self.P[self.local_index]*1e-6)/self.a[self.local_index])
-        self.slipv2[self.local_index]=(2.0*self.V0)*np.exp(-self.state_local/self.a[self.local_index])*np.sinh(self.Tt2o_local/(self.Tno_local-self.P[self.local_index]*1e-6)/self.a[self.local_index])
-
-        # if(len(self.indexTnnegtive)>0):
-        #     self.slipv1[local_index_Tno]=dVdt1*h+slipv1_
-        #     self.slipv2[local_index_Tno]=dVdt2*h+slipv2_
-
-        #print(np.max(np.exp(-self.state_local/self.a[self.local_index])),rank)
-        t0 = MPI.Wtime()
-        self.slipv1=comm.allreduce(self.slipv1, op=MPI.SUM)
-        self.slipv2=comm.allreduce(self.slipv2, op=MPI.SUM)
-        t1 = MPI.Wtime()
-        self.comm_time += (t1 - t0)
-        self.slipv=np.sqrt(self.slipv1*self.slipv1+self.slipv2*self.slipv2)
-
-        #print(np.max(self.slipv))
-        #self.rake=np.arctan2(self.Tt2o,self.Tt1o)
-        
-        #indexmin=np.where(self.slipv<1e-30)[0]
-        #if(len(indexmin)>0):
-        #    self.slipv[indexmin]=1e-30
-        #self.maxslipv0=np.max(self.slipv)
-        #update slip
-        self.slip1=self.slip1+self.slipv1*h
-        self.slip2=self.slip2+self.slipv2*h
-        self.slip=np.sqrt(self.slip1*self.slip1+self.slip2*self.slip2)
 
         for i in range(len(self.fault_station_index)):
             station_index = self.fault_station_index[i]
@@ -2250,7 +2354,6 @@ class QDsim:
             if(rank==0):
                 self.Tt=np.sqrt(self.Tt1o*self.Tt1o+self.Tt2o*self.Tt2o)
                 #self.rake=np.arctan2(self.Tt2o,self.Tt1o)
-                self.rake=np.arctan2(self.slip2,self.slip1)
                 self.fric=self.Tt/(self.Tno-self.P*1e-6)
 
                 
@@ -2318,6 +2421,12 @@ class QDsim:
     
       
     #RungeKutte iteration
+    @staticmethod
+    def _rk_compensated_add(old, increment, compensation):
+        corrected = increment - compensation
+        updated = old + corrected
+        return updated, (updated - old) - corrected
+
     def RungeKutte_solve_Dormand_Prince_(self,h):
         B21=.2
         B31=3./40
@@ -2334,7 +2443,7 @@ class QDsim:
 
         B61=9017./3168.
         B62=-355./33.
-        B63=-46732./5247.
+        B63=46732./5247.
         B64=49./176.
         B65=-5103./18656.
 
@@ -2352,126 +2461,105 @@ class QDsim:
         B87=1./40.
 
         Tno=self.Tno_local
-        Tt1o=self.Tt1o_local
-        Tt2o=self.Tt2o_local
+        slipv=self.slipv[self.local_index]
         state=self.state_local
-        #P=self.P
+        ftc=self.ftc_local if self.IfFTC else np.zeros_like(state)
+        old_values = {'Tno': Tno, 'slipv': slipv, 'state': state, 'ftc': ftc}
+        saved = getattr(self, '_rk_compensation', {})
+        residuals = {
+            name: saved[name] if name in saved and saved[name].shape == value.shape
+            else np.zeros_like(value)
+            for name, value in old_values.items()
+        }
+        trial_residuals = {}
+
+        def rk_add(name, increment):
+            # Every stage starts from the same accepted value and residual.
+            updated, residual = self._rk_compensated_add(
+                old_values[name], increment, residuals[name])
+            trial_residuals[name] = residual
+            return updated
         
         
 
-        dstatedt1,dsigmadt1,dtau1dt1,dtau2dt1=self.derivative_(Tno,Tt1o,Tt2o,state)
-        #print('dtau1dt1 ',np.max(dtau1dt1),np.min(dtau1dt1),rank)
+        # Integrate stage speeds; commit accumulated slip only on acceptance.
+        slip_quadrature = B71*slipv
+        dstatedt1,dsigmadt1,dVdt1,dftcdt1=self.derivative_(Tno,slipv,state,ftc)
         
         
-        #state2=self.state2_gpu
-        Tno_yhk=Tno+h*B21*dsigmadt1
-        Tt1o_yhk=Tt1o+h*B21*dtau1dt1
-        Tt2o_yhk=Tt2o+h*B21*dtau2dt1
-        #Tt2o_yhk=Tt2o+h*B21*dtau2dt1
-        state_yhk=state+h*B21*dstatedt1
-        #P_yhk=P+h*B21*dPdt1
-        #print('Tt_yhk',np.mean(Tt_yhk))
-        #print(np.max(Tt1o_yhk),np.max(Tt1o),rank)
-        dstatedt2,dsigmadt2,dtau1dt2,dtau2dt2=self.derivative_(Tno_yhk,Tt1o_yhk,Tt2o_yhk,state_yhk)
+        Tno_yhk=rk_add('Tno', h*B21*dsigmadt1)
+        slipv_yhk=rk_add('slipv', h*B21*dVdt1)
+        state_yhk=rk_add('state', h*B21*dstatedt1)
+        ftc_yhk=rk_add('ftc', h*B21*dftcdt1)
+        dstatedt2,dsigmadt2,dVdt2,dftcdt2=self.derivative_(Tno_yhk,slipv_yhk,state_yhk,ftc_yhk)
         
-        Tno_yhk=Tno+h*(B31*dsigmadt1+B32*dsigmadt2)
-        Tt1o_yhk=Tt1o+h*(B31*dtau1dt1+B32*dtau1dt2)
-        Tt2o_yhk=Tt2o+h*(B31*dtau2dt1+B32*dtau2dt2)
-        #Tt2o_yhk=Tt2o+h*(B31*dtau2dt1+B32*dtau2dt2)
-        state_yhk=state+h*(B31*dstatedt1+B32*dstatedt2)
-        #P_yhk=P+h*(B31*dPdt1+B32*dPdt2)
-        #state2_yhk=state2+h*(B31*dstate2dt1+B32*dstate2dt2)
-        #print('Tt_yhk',np.mean(Tt_yhk))
+        Tno_yhk=rk_add('Tno', h*(B31*dsigmadt1+B32*dsigmadt2))
+        slipv_yhk=rk_add('slipv', h*(B31*dVdt1+B32*dVdt2))
+        state_yhk=rk_add('state', h*(B31*dstatedt1+B32*dstatedt2))
+        ftc_yhk=rk_add('ftc', h*(B31*dftcdt1+B32*dftcdt2))
         
-        dstatedt3,dsigmadt3,dtau1dt3,dtau2dt3=self.derivative_(Tno_yhk,Tt1o_yhk,Tt2o_yhk,state_yhk)
-        Tno_yhk=Tno+h*(B41*dsigmadt1+B42*dsigmadt2+B43*dsigmadt3)
-        Tt1o_yhk=Tt1o+h*(B41*dtau1dt1+B42*dtau1dt2+B43*dtau1dt3)
-        Tt2o_yhk=Tt2o+h*(B41*dtau2dt1+B42*dtau2dt2+B43*dtau2dt3)
-        state_yhk=state+h*(B41*dstatedt1+B42*dstatedt2+B43*dstatedt3)
-        #P_yhk=P+h*(B41*dPdt1+B42*dPdt2+B43*dPdt3)
-        #state2_yhk=state2+h*(B41*dstate2dt1+B42*dstate2dt2+B43*dstate2dt3)
-        #print('Tt_yhk',np.mean(Tt_yhk))
+        slip_quadrature += B73*slipv_yhk
+        dstatedt3,dsigmadt3,dVdt3,dftcdt3=self.derivative_(Tno_yhk,slipv_yhk,state_yhk,ftc_yhk)
+        Tno_yhk=rk_add('Tno', h*(B41*dsigmadt1+B42*dsigmadt2+B43*dsigmadt3))
+        slipv_yhk=rk_add('slipv', h*(B41*dVdt1+B42*dVdt2+B43*dVdt3))
+        state_yhk=rk_add('state', h*(B41*dstatedt1+B42*dstatedt2+B43*dstatedt3))
+        ftc_yhk=rk_add('ftc', h*(B41*dftcdt1+B42*dftcdt2+B43*dftcdt3))
 
-        dstatedt4,dsigmadt4,dtau1dt4,dtau2dt4=self.derivative_(Tno_yhk,Tt1o_yhk,Tt2o_yhk,state_yhk)
-        Tno_yhk=Tno+h*(B51*dsigmadt1+B52*dsigmadt2+B53*dsigmadt3+B54*dsigmadt4)
-        Tt1o_yhk=Tt1o+h*(B51*dtau1dt1+B52*dtau1dt2+B53*dtau1dt3+B54*dtau1dt4)
-        Tt2o_yhk=Tt2o+h*(B51*dtau2dt1+B52*dtau2dt2+B53*dtau2dt3+B54*dtau2dt4)
-        state_yhk=state+h*(B51*dstatedt1+B52*dstatedt2+B53*dstatedt3+B54*dstatedt4)
-        #P_yhk=P+h*(B51*dPdt1+B52*dPdt2+B53*dPdt3+B54*dPdt4)
-        #state2_yhk=state2+h*(B51*dstate2dt1+B52*dstate2dt2+B53*dstate2dt3+B54*dstate2dt4)
+        slip_quadrature += B74*slipv_yhk
+        dstatedt4,dsigmadt4,dVdt4,dftcdt4=self.derivative_(Tno_yhk,slipv_yhk,state_yhk,ftc_yhk)
+        Tno_yhk=rk_add('Tno', h*(B51*dsigmadt1+B52*dsigmadt2+B53*dsigmadt3+B54*dsigmadt4))
+        slipv_yhk=rk_add('slipv', h*(B51*dVdt1+B52*dVdt2+B53*dVdt3+B54*dVdt4))
+        state_yhk=rk_add('state', h*(B51*dstatedt1+B52*dstatedt2+B53*dstatedt3+B54*dstatedt4))
+        ftc_yhk=rk_add('ftc', h*(B51*dftcdt1+B52*dftcdt2+B53*dftcdt3+B54*dftcdt4))
 
-        dstatedt5,dsigmadt5,dtau1dt5,dtau2dt5=self.derivative_(Tno_yhk,Tt1o_yhk,Tt2o_yhk,state_yhk)
-        Tno_yhk=Tno+h*(B61*dsigmadt1+B62*dsigmadt2+B63*dsigmadt3+B64*dsigmadt4+B65*dsigmadt5)
-        Tt1o_yhk=Tt1o+h*(B61*dtau1dt1+B62*dtau1dt2+B63*dtau1dt3+B64*dtau1dt4+B65*dtau1dt5)
-        Tt2o_yhk=Tt2o+h*(B61*dtau2dt1+B62*dtau2dt2+B63*dtau2dt3+B64*dtau2dt4+B65*dtau2dt5)
-        state_yhk=state+h*(B61*dstatedt1+B62*dstatedt2+B63*dstatedt3+B64*dstatedt4+B65*dstatedt5)
-        #P_yhk=P+h*(B61*dPdt1+B62*dPdt2+B63*dPdt3+B64*dPdt4+B65*dPdt5)
-        #state2_yhk=state2+h*(B61*dstate2dt1+B62*dstate2dt2+B63*dstate2dt3+B64*dstate2dt4+B65*dstate2dt5)
+        slip_quadrature += B75*slipv_yhk
+        dstatedt5,dsigmadt5,dVdt5,dftcdt5=self.derivative_(Tno_yhk,slipv_yhk,state_yhk,ftc_yhk)
+        Tno_yhk=rk_add('Tno', h*(B61*dsigmadt1+B62*dsigmadt2+B63*dsigmadt3+B64*dsigmadt4+B65*dsigmadt5))
+        slipv_yhk=rk_add('slipv', h*(B61*dVdt1+B62*dVdt2+B63*dVdt3+B64*dVdt4+B65*dVdt5))
+        state_yhk=rk_add('state', h*(B61*dstatedt1+B62*dstatedt2+B63*dstatedt3+B64*dstatedt4+B65*dstatedt5))
+        ftc_yhk=rk_add('ftc', h*(B61*dftcdt1+B62*dftcdt2+B63*dftcdt3+B64*dftcdt4+B65*dftcdt5))
         
 
-        dstatedt6,dsigmadt6,dtau1dt6,dtau2dt6=self.derivative_(Tno_yhk,Tt1o_yhk,Tt2o_yhk,state_yhk)
-        Tno_yhk=Tno+h*(B71*dsigmadt1+B73*dsigmadt3+B74*dsigmadt4+B75*dsigmadt5+B76*dsigmadt6)
-        Tt1o_yhk=Tt1o+h*(B71*dtau1dt1+B73*dtau1dt3+B74*dtau1dt4+B75*dtau1dt5+B76*dtau1dt6)
-        Tt2o_yhk=Tt2o+h*(B71*dtau2dt1+B73*dtau2dt3+B74*dtau2dt4+B75*dtau2dt5+B76*dtau2dt6)
-        state_yhk=state+h*(B71*dstatedt1+B73*dstatedt3+B74*dstatedt4+B75*dstatedt5+B76*dstatedt6)
-        #P_yhk=P+h*(B71*dPdt1+B73*dPdt3+B74*dPdt4+B75*dPdt5+B76*dPdt6)
-        #print('dstatedt6',np.max(dstatedt6),np.min(dstatedt6))
-        #state2_yhk=state2+h*(B71*dstate2dt1+B73*dstate2dt3+B74*dstate2dt4+B75*dstate2dt5+B76*dstate2dt6)
+        slip_quadrature += B76*slipv_yhk
+        dstatedt6,dsigmadt6,dVdt6,dftcdt6=self.derivative_(Tno_yhk,slipv_yhk,state_yhk,ftc_yhk)
+        Tno_yhk=rk_add('Tno', h*(B71*dsigmadt1+B73*dsigmadt3+B74*dsigmadt4+B75*dsigmadt5+B76*dsigmadt6))
+        slipv_yhk=rk_add('slipv', h*(B71*dVdt1+B73*dVdt3+B74*dVdt4+B75*dVdt5+B76*dVdt6))
+        state_yhk=rk_add('state', h*(B71*dstatedt1+B73*dstatedt3+B74*dstatedt4+B75*dstatedt5+B76*dstatedt6))
+        ftc_yhk=rk_add('ftc', h*(B71*dftcdt1+B73*dftcdt3+B74*dftcdt4+B75*dftcdt5+B76*dftcdt6))
         
-        dstatedt7,dsigmadt7,dtau1dt7,dtau2dt7=self.derivative_(Tno_yhk,Tt1o_yhk,Tt2o_yhk,state_yhk)
-        Tno_yhk8=Tno+h*(B81*dsigmadt1+B83*dsigmadt3+B84*dsigmadt4+B85*dsigmadt5+B86*dsigmadt6+B87*dsigmadt7)
-        Tt1o_yhk8=Tt1o+h*(B81*dtau1dt1+B83*dtau1dt3+B84*dtau1dt4+B85*dtau1dt5+B86*dtau1dt6+B87*dtau1dt7)
-        Tt2o_yhk8=Tt2o+h*(B81*dtau2dt1+B83*dtau2dt3+B84*dtau2dt4+B85*dtau2dt5+B86*dtau2dt6+B87*dtau2dt7)
-        state_yhk8=state+h*(B81*dstatedt1+B83*dstatedt3+B84*dstatedt4+B85*dstatedt5+B86*dstatedt6+B87*dstatedt7)
-        #P_yhk8=P+h*(B81*dPdt1+B83*dPdt3+B84*dPdt4+B85*dPdt5+B86*dPdt6+B87*dPdt7)
+        # Preserve the fifth-order residuals before the embedded estimate.
+        self._rk_trial_compensation = trial_residuals.copy()
+        dstatedt7,dsigmadt7,dVdt7,dftcdt7=self.derivative_(Tno_yhk,slipv_yhk,state_yhk,ftc_yhk)
+        Tno_yhk8=rk_add('Tno', h*(B81*dsigmadt1+B83*dsigmadt3+B84*dsigmadt4+B85*dsigmadt5+B86*dsigmadt6+B87*dsigmadt7))
+        slipv_yhk8=rk_add('slipv', h*(B81*dVdt1+B83*dVdt3+B84*dVdt4+B85*dVdt5+B86*dVdt6+B87*dVdt7))
+        state_yhk8=rk_add('state', h*(B81*dstatedt1+B83*dstatedt3+B84*dstatedt4+B85*dstatedt5+B86*dstatedt6+B87*dstatedt7))
+        ftc_yhk8=rk_add('ftc', h*(B81*dftcdt1+B83*dftcdt3+B84*dftcdt4+B85*dftcdt5+B86*dftcdt6+B87*dftcdt7))
         
-        #state2_yhk8=state2+h*(B81*dstate2dt1+B83*dstate2dt3+B84*dstate2dt4+B85*dstate2dt5+B86*dstate2dt6+B87*dstate2dt7)
 
-        #state1_yhk_err=cp.abs(state1_yhk8-state1_yhk)
         state_yhk_err=np.abs(state_yhk8-state_yhk)
-        #Tno_yhk_err=np.abs(Tno_yhk8-Tno_yhk)
-        #P_yhk_err=np.abs(P_yhk8-P_yhk)
-        Tt1o_yhk_err=np.abs(Tt1o_yhk8-Tt1o_yhk)
-        Tt2o_yhk_err=np.abs(Tt2o_yhk8-Tt2o_yhk)
+        slipv_yhk_err=np.abs(slipv_yhk8-slipv_yhk)
         
-        # self.indexTnnegtive=np.where(Tno_yhk<0)[0]
-        # Tt1o_yhk_err[self.indexTnnegtive]=0
-        # Tt2o_yhk_err[self.indexTnnegtive]=0
-        # Tt1o_yhk[self.indexTnnegtive]=0
-        # Tt2o_yhk[self.indexTnnegtive]=0
         
 
 
         self.Relerrormax1=np.max(np.abs(state_yhk_err/state_yhk8))+1e-10
 
         
-        Relerrormax2=np.max(np.abs(Tt1o_yhk_err/(Tt1o_yhk8+1e-10)))
-        Relerrormax2o=np.max(np.abs(Tt2o_yhk_err/(Tt2o_yhk8+1e-10)))
-        #Relerrormax2_=np.max(np.abs(Tno_yhk_err/Tno_yhk8))
-        #Relerrormax2_P=np.max(np.abs(P_yhk_err/P_yhk8))
-        #print('error: ',np.max(Relerrormax2),np.max(Relerrormax2o),np.max(Relerrormax2_),np.max(Relerrormax2_P))
+        self.Relerrormax2=np.max(np.abs(slipv_yhk_err)/(np.abs(slipv_yhk8)+1e-30))+1e-10
+        if np.any(slipv_yhk < 0) or not np.all(np.isfinite(slipv_yhk)):
+            self.Relerrormax2 = np.inf
+        if self.IfFTC:
+            ftc_scale = self.ftc_atol + self.ftc_rtol*np.maximum(np.abs(ftc_yhk), np.abs(ftc_yhk8))
+            # Outer controllers use RelTol1=1e-4; normalize to that scale.
+            ftc_error = np.max(np.abs(ftc_yhk8-ftc_yhk)/ftc_scale)
+            self.Relerrormax1 = max(self.Relerrormax1, 1e-4*ftc_error)
+            if not np.all(np.isfinite(ftc_yhk)) or not np.isfinite(ftc_error) or np.any(ftc_yhk < 0):
+                self.Relerrormax1 = np.inf
+        self._rk_ftc = ftc_yhk
+        self._rk_slip_increment = h*slip_quadrature
+        self._rk_velocity = slipv_yhk
 
-        #self.Relerrormax2=max(Relerrormax2,Relerrormax2o,Relerrormax2_,Relerrormax2_P)+1e-10
-        self.Relerrormax2=max(Relerrormax2,Relerrormax2o)+1e-10
-        #self.Relerrormax2=cp.linalg.norm(Tt1o_yhk_err/Tt1o_yhk8)+1e-10
-
-        #print('errormax1,errormax2,relaemax1,relaemax2:',errormax1,errormax2,self.Relerrormax1,self.Relerrormax2)
-
-        # if((self.maxslipv0)>1e-6):
-        #     self.RelTol1=1e-4
-        #     self.RelTol2=1e-4
-        # else:
-        #     self.RelTol1=2e-6
-        #     self.RelTol2=2e-6
-        
-        
-
-        #print(self.Relerrormax1,self.Relerrormax2)
-
-        
-
-
-        return Tno_yhk,Tt1o_yhk,Tt2o_yhk,state_yhk
+        return Tno_yhk,self.Tt1o_local.copy(),self.Tt2o_local.copy(),state_yhk
     
 
     #def ouputVTK(self,**kwargs):
@@ -2635,6 +2723,10 @@ class QDsim:
         add_scalar("Shear_2[MPa]", self.Tt2o)
         add_scalar("rake[Degree]", self.rake*180./np.pi)
         add_scalar("state", self.state)
+        if self.IfFTC:
+            add_scalar("FTC", self.ftc)
+            add_scalar("state_effective", self.state-self.ftc)
+            add_scalar("FTC_KQT_high_branch", (self.slipv >= self.ftc_Vtransition).astype(np.float64))
         add_scalar("Slipv[m/s]", self.slipv)
         add_scalar("Slipv1[m/s]", self.slipv1)
         add_scalar("Slipv2[m/s]", self.slipv2)
@@ -2652,6 +2744,8 @@ class QDsim:
             add_scalar("b", self.b)
             add_scalar("a-b", self.a - self.b)
             add_scalar("dc", self.dc)
+            if self.IfFTC:
+                add_scalar("FTC_Vw[m/s]", self.ftc_Vw)
             if(self.Ifdila==True or self.Ifthermal==True):
                 add_scalar("shear zone width[m]", self.hs)
             add_scalar("slip_plate[m/s]", self.slipvC)
