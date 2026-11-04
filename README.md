@@ -54,6 +54,7 @@ Please refer to the [Code Manual](https://pyquake3d.readthedocs.io/en/latest/) f
 -  Support for pore fluid pressure varing with slip due to inelastic processes including dilatancy, pore compaction.
 -  Supports fluid thermal pressurization caused by friction heating.
 -  Singularity-free regularized Green's function (only full space).
+-  coupling shear heating with dynamic weakening and rapid healing through an additional state variable to modify the friction.
 
 <p align="center">
   <img src="https://github.com/Computational-Geophysics/PyQuake3D//raw/main/images/framework/framework_new.png" alt="Framework Overview">
