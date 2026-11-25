@@ -178,7 +178,8 @@ class QDsim_gpumpi(QDsim.QDsim):
 
         
         nrjct=0
-        h=dttry
+        #h=dttry
+        h=self._limit_dc_timestep(dttry) #changed
         running=True
         dtnext=None
 
@@ -408,6 +409,7 @@ class QDsim_gpumpi(QDsim.QDsim):
         dtnext=None
         
         if(col == 0):
+            h = self._limit_dc_timestep(h) #changed
             
             while running:
                 t0= MPI.Wtime()
