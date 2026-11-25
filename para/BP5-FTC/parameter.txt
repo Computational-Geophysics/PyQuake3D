@@ -57,16 +57,16 @@ FTC maximum weakening: 0.0
 FTC weakening velocity: 0.1
 # L, m
 FTC characteristic distance: 5
-# k, 1/s
-FTC k low velocity: 0.0
-FTC k high velocity: 0.0
-# Q, J/mol
-FTC Q high velocity: 0.0
-FTC Q low velocity: 0.0
-# Tref, ℃
-FTC Tref high velocity: 200
-FTC Tref low velocity: 200
-# Hard-switch velocity, m/s; must be > 0
+# k_ref, 1/s
+FTC k_ref low velocity: 0.0
+FTC k_ref high velocity: 0.0
+# Q_app, J/mol
+FTC Q_app high velocity: 0.0
+FTC Q_app low velocity: 0.0
+# T_ref, ℃
+FTC T_ref high velocity: 200
+FTC T_ref low velocity: 200
+# Smooth-transition center velocity, m/s; must be > 0
 FTC KQT transition velocity: 1.0e-3
 # c: permanent damage/restrengthening target
 FTC residual target c: 0.0
