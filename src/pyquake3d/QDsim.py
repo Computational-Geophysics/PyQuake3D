@@ -527,28 +527,28 @@ class QDsim:
         self.IfFTC=self.Para0.get('If FTC', False)
         # FTC RK error tolerances
         self.ftc_rtol = 1.0e-4
-        self.ftc_atol = 1.0e-8    #changed ftc截断容错
+        self.ftc_atol = 1.0e-8    #changed Absolute error tolerance for FTC integration.
         
-        if self.IfFTC:   #changed  ftc检查，动态弱化快速愈合效应检查
+        if self.IfFTC:   #changed Initialize and validate FTC weakening and healing parameters.
             if not self.Ifthermal:
                 raise ValueError(
                     'FTC requires "If thermal: True" '
-                    'because Tcore is needed.'
+                    'because T_core is needed.'
                 )
 
             self.ftc_dmu_max = self.Para0['FTC maximum weakening']
             self.ftc_Vw = self.Para0['FTC weakening velocity']
             self.ftc_L = self.Para0['FTC characteristic distance']
 
-            # Low-velocity KQT
-            self.ftc_k_low = self.Para0['FTC healing rate low velocity']
-            self.ftc_Q_low = self.Para0['FTC activation energy low velocity']
-            self.ftc_Tref_low_C = self.Para0['FTC reference temperature low velocity']
+            # # Low-velocity k_ref / Q_app / T_ref
+            self.ftc_k_ref_low = self.Para0['FTC k_ref low velocity']
+            self.ftc_Q_app_low = self.Para0['FTC Q_app low velocity']
+            self.ftc_T_ref_low_C = self.Para0['FTC T_ref low velocity']
 
-            # High-velocity KQT
-            self.ftc_k_high = self.Para0['FTC healing rate high velocity']
-            self.ftc_Q_high = self.Para0['FTC activation energy high velocity']
-            self.ftc_Tref_high_C = self.Para0['FTC reference temperature high velocity']
+            # High-velocity k_ref / Q_app / T_ref
+            self.ftc_k_ref_high = self.Para0['FTC k_ref high velocity']
+            self.ftc_Q_app_high = self.Para0['FTC Q_app high velocity']
+            self.ftc_T_ref_high_C = self.Para0['FTC T_ref high velocity']
 
             self.ftc_Vtransition = self.Para0['FTC KQT transition velocity']
 
@@ -562,11 +562,11 @@ class QDsim:
                 value = getattr(self, name)
                 if not np.isfinite(value) or value <= 0:
                     raise ValueError(f'{name} must be positive and finite.')
-            for name in ('ftc_dmu_max', 'ftc_k_low', 'ftc_k_high', 'ftc_Q_low', 'ftc_Q_high', 'ftc_target'):
+            for name in ('ftc_dmu_max', 'ftc_k_ref_low', 'ftc_k_ref_high', 'ftc_Q_app_low', 'ftc_Q_app_high', 'ftc_target'):
                 value = getattr(self, name)
                 if not np.isfinite(value) or value < 0:
                     raise ValueError(f'{name} must be nonnegative and finite.')
-            for name in ('ftc_Tref_low_C', 'ftc_Tref_high_C'):
+            for name in ('ftc_T_ref_low_C', 'ftc_T_ref_high_C'):
                 value = getattr(self, name)
                 if not np.isfinite(value) or value <= -273.15:
                     raise ValueError(f'{name} must be above absolute zero.')
@@ -1189,6 +1189,7 @@ class QDsim:
             self.yp=np.logspace(start=log(scaleC*c), stop=log(ymax), num=num, base=np.e)-scaleC*c
             self.zp=np.log(c+self.yp)
             self.Tempearr=np.ones([N,num])*self.T0
+            self.T0arr = np.full(N, self.T0, dtype=np.float64) #changed
             self.Tmatrix=np.zeros([num,num])
             self.dTdtmatrix=np.zeros([N,num])
             self.Calc_Tmatrix()
@@ -1200,7 +1201,7 @@ class QDsim:
             # self.c=self.Para0['Heat capacity']
             # self.T0=self.Para0['Initial temperature']
         
-        if(self.IfFTC==True):   #changed 动态弱化快速愈合参数
+        if(self.IfFTC==True):   #changed Initialize the FTC weakening velocity for each fault element.
             self.ftc_Vw = np.full(N,self.ftc_Vw,dtype=np.float64)  #changed
             
         traction=[]
@@ -1562,6 +1563,14 @@ class QDsim:
             print('No external Initial porepressure and shear zone width data!')
         #     return
 
+        if self.Ifthermal and values.shape[1] >= 14: #changed
+            initial_temperature = values[:Ncell, 13].copy() #changed
+            if len(initial_temperature) != Ncell or not np.all(np.isfinite(initial_temperature)): #changed
+                raise ValueError('Column 14 must contain one finite initial temperature per cell.') #changed
+            self.T0arr = initial_temperature #changed
+            self.Tempe = self.T0arr.copy() #changed
+            self.Tempearr[:] = self.T0arr[:, None] #changed
+
         #slipv1=1e-9
         #self.Tt=self.Tno*self.a*np.arcsinh(self.slipv/(2.0*self.V0)*np.exp((self.f0+self.b*np.log(self.V0/self.Vpl_con))/self.a))
         #self.Tt=np.sqrt(self.Tt1o*self.Tt1o+self.Tt2o*self.Tt2o)
@@ -1621,6 +1630,13 @@ class QDsim:
     def _rk_comm(self):
         return self.diag_comm if self.Lt_jud else comm
 
+    def _limit_dc_timestep(self, h): #changed
+        idx = self.local_index #changed
+        mpi_comm = self._rk_comm() #changed
+        vmax = mpi_comm.allreduce(float(np.max(np.abs(self.slipv[idx]), initial=0.0)), op=MPI.MAX) #changed
+        dc_min = mpi_comm.allreduce(float(np.min(self.dc[idx], initial=np.inf)), op=MPI.MIN) #changed
+        return min(float(h), 0.5*dc_min/max(vmax, 1e-80)) #changed
+
     def _update_stage_elastic_mpi(self, slipv):
         velocity = np.zeros(len(self.slipv), dtype=np.float64)
         velocity[self.local_index] = slipv
@@ -1632,38 +1648,61 @@ class QDsim:
         self.AdotV1, self.AdotV2 = rates[1], rates[2]
 
     def update_ftc(self,slipv,state,ftc):
-        #if self.IfFTC:  #changed 当前的Ftc对弱化与愈合效应进行隔离，表明高速弱化，低速愈合，当他们被同时放在一起的时候，恒定的高速摩擦会出现以下情况。
-        # 在摩擦初期，高速导致摩擦快速下降，并且升温，如果高速也打开愈合效应，则会出现同震期间的愈合行为，弱化导致的摩擦下降很快被愈合抹平
+        #if self.IfFTC:  #changed Separate high-velocity weakening from low-velocity healing; allowing both during sustained high-velocity sliding can cause competing effects.
+        # Early in sliding, high velocity rapidly reduces friction and raises temperature. If healing is also active at high velocity, it can quickly offset the friction reduction caused by weakening.
         Vsafe = np.maximum(slipv, np.finfo(np.float64).tiny,)
         # Target coseismic weakening
         Vw_local = self.ftc_Vw[self.local_index]  #changed
         delta_mu_w = (self.ftc_dmu_max * np.maximum(1.0 - Vw_local / Vsafe, 0.0))
-
+        
+        """
         # Hard KQT switch
         high_velocity = (slipv >= self.ftc_Vtransition)
 
-        k_eff = np.where(high_velocity, self.ftc_k_high, self.ftc_k_low)
-
-        Q_eff = np.where(high_velocity, self.ftc_Q_high, self.ftc_Q_low)
-
-        Tref_eff_C = np.where(high_velocity, self.ftc_Tref_high_C, self.ftc_Tref_low_C)
+        k_ref_eff = np.where(high_velocity, self.ftc_k_ref_high, self.ftc_k_ref_low)
+        Q_app_eff = np.where(high_velocity, self.ftc_Q_app_high, self.ftc_Q_app_low)
+        T_ref_eff_C = np.where(high_velocity, self.ftc_T_ref_high_C, self.ftc_T_ref_low_C)
 
         # Convert both temperatures to Kelvin here
-        Tref_eff_K = Tref_eff_C + 273.15
-        Tcore_K = (self.Tempe[self.local_index] + 273.15)
+        T_ref_eff_K = T_ref_eff_C + 273.15
+        T_core_K = (self.Tempe[self.local_index] + 273.15)
 
-        Tref_eff_K = np.maximum(Tref_eff_K, 1.0)
-        Tcore_K = np.maximum(Tcore_K, 1.0)
+        T_ref_eff_K = np.maximum(T_ref_eff_K, 1.0)
+        T_core_K = np.maximum(T_core_K, 1.0)
 
-        reaction_rate = (k_eff * np.exp((Q_eff / self.Rgas) * (1.0 / Tref_eff_K - 1.0 / Tcore_K)))
+        reaction_rate = (k_ref_eff * np.exp((Q_app_eff / self.Rgas) * (1.0 / T_ref_eff_K - 1.0 / T_core_K)))
+        """
+        #changed Smooth KQT switch over 0.8–1.25 times the transition velocity
+        V_lo = 0.8 * self.ftc_Vtransition  #changed
+        V_hi = 1.25 * self.ftc_Vtransition  #changed
+        log_width = np.log(V_hi / V_lo)  #changed
+        x = np.clip((np.log(Vsafe) - np.log(V_lo)) / log_width, 0.0, 1.0)  #changed
 
+        #changed Quintic smoothstep satisfying s(0)=0, s(1)=1, with zero first
+        #changed and second derivatives at both endpoints for smooth joining
+        #changed to the constant weights outside the transition interval.
+        #changed These six conditions yield s(x)=10x^3-15x^4+6x^5, which increases
+        #changed monotonically from 0 to 1 and replaces the abrupt healing switch.
+        s = x**3 * (10.0 - 15.0*x + 6.0*x**2)  #changed
+        w_low = 1.0 - s  #changed
+
+        #changed Compute each branch's Arrhenius rate before blending
+        T_core_K = self.Tempe[self.local_index] + 273.15  #changed
+        T_ref_low_K = self.ftc_T_ref_low_C + 273.15  #changed
+        T_ref_high_K = self.ftc_T_ref_high_C + 273.15  #changed
+        exponent_low = (self.ftc_Q_app_low / self.Rgas) * (1.0 / T_ref_low_K - 1.0 / T_core_K)  #changed
+        exponent_high = (self.ftc_Q_app_high / self.Rgas) * (1.0 / T_ref_high_K - 1.0 / T_core_K)  #changed
+        rate_low = self.ftc_k_ref_low * np.exp(exponent_low)  #changed
+        rate_high = self.ftc_k_ref_high * np.exp(exponent_high)  #changed
+        reaction_rate = w_low * rate_low + (1.0 - w_low) * rate_high  #changed
+        
         # Equivalent to:
         # V/L*(Delta_mu_w-ftc)
         # - reaction_rate*(ftc-c)
         dftcdt = (slipv / self.ftc_L * (delta_mu_w - ftc) + reaction_rate * (self.ftc_target - ftc))
 
         # state = f0 + b*psi psi_eff = state - ftc
-        psi_eff = state - ftc #changed 这里如果用psi eff的话，把psi eff视为原来的state - ftc，当没有ftc时，退回state
+        psi_eff = state - ftc #changed The effective state is state minus FTC; when FTC is zero, it reduces to the original state.
 
         return dftcdt, psi_eff
 
@@ -1673,7 +1712,7 @@ class QDsim:
         idx = self.local_index
         a, b, dc, f0 = self.a[idx], self.b[idx], self.dc[idx], self.f0[idx]
 
-        if self.IfFTC:  #changed 当前的Ftc对弱化与愈合效应进行隔离，表明高速弱化，低速愈合，当他们被同时放在一起的时候，恒定的高速摩擦会出现以下情况
+        if self.IfFTC:  #changed Apply FTC weakening and healing corrections to the effective state.
             if ftc is None:
                 ftc = self.ftc_local
             dftcdt, psi_eff=self.update_ftc(slipv,state,ftc)
@@ -1877,7 +1916,8 @@ class QDsim:
             bv=np.copy(Tarr[k,:-1])
             bv[0]=bv[0]-2.0*self.cth*np.exp(-(z_k[0]-dz[0]/2))*g[i]*dt/dz[0]
             #B1.append(b[0])
-            bv[-1]=bv[-1]+dt/(dz[-1]*dz[-1])*self.cth*np.exp(-(2.0*z_k[-2]+dz[-1]/2))*self.T0
+            #bv[-1]=bv[-1]+dt/(dz[-1]*dz[-1])*self.cth*np.exp(-(2.0*z_k[-2]+dz[-1]/2))*self.T0
+            bv[-1]=bv[-1]+dt/(dz[-1]*dz[-1])*self.cth*np.exp(-(2.0*z_k[-2]+dz[-1]/2))*self.T0arr[k] #changed
             
             Ind_term=trac[i]*1e6*slipv[i]/(self.c)*np.exp(-self.yp[:-1]*self.yp[:-1]/(2.0*halfwidth[k]*halfwidth[k]))/(sqrt(2.0*np.pi)*halfwidth[k])
             #Ind_term=self.sourcep2*trac[i]*1e6*slipv[i]/self.c
@@ -1891,7 +1931,8 @@ class QDsim:
             if(self.Ifdila==True):
                 self.dTdtmatrix[k,:-1]=np.dot(-self.Tmatrix[:-1,:-1],x)
                 self.dTdtmatrix[k,0]=self.dTdtmatrix[k,0]-2.0*self.cth*np.exp(-(z_k[0]-dz[0]/2))*g[i]/dz[0]
-                self.dTdtmatrix[k,-2]=self.dTdtmatrix[k,-2]+1.0/(dz[-1]*dz[-1])*self.cth*np.exp(-(2.0*z_k[-2]+dz[-1]/2))*self.T0
+                #self.dTdtmatrix[k,-2]=self.dTdtmatrix[k,-2]+1.0/(dz[-1]*dz[-1])*self.cth*np.exp(-(2.0*z_k[-2]+dz[-1]/2))*self.T0
+                self.dTdtmatrix[k,-2]=self.dTdtmatrix[k,-2]+1.0/(dz[-1]*dz[-1])*self.cth*np.exp(-(2.0*z_k[-2]+dz[-1]/2))*self.T0arr[k] #changed
                 self.dTdtmatrix[k,:-1]=self.dTdtmatrix[k,:-1]+Ind_term
             #self.dPdt0[i]=(x[0]*1e-6-self.P[i])/dt
             term1 = -np.exp(-(z_k[0] - dz[0]/2)) * (Tarr[k,0] - Tarr[k,1]+2*dz[0]*g[i]*exp(z_k[0]))
@@ -2013,6 +2054,7 @@ class QDsim:
         dtnext=None
         
         if(col == 0):
+            h = self._limit_dc_timestep(h) #changed
             
             while running:
                 t0 = MPI.Wtime()
@@ -2243,7 +2285,8 @@ class QDsim:
         #    print(self.AdotV2[100:120])
 
         nrjct=0
-        h=dttry
+        #h=dttry
+        h=self._limit_dc_timestep(dttry) #changed
         running=True
         dtnext=None
 
@@ -2460,6 +2503,7 @@ class QDsim:
         B86=187./2100.
         B87=1./40.
 
+        """  
         Tno=self.Tno_local
         slipv=self.slipv[self.local_index]
         state=self.state_local
@@ -2472,7 +2516,41 @@ class QDsim:
             for name, value in old_values.items()
         }
         trial_residuals = {}
+        """
+        Tno = self.Tno_local
+        slipv = self.slipv[self.local_index]
 
+        state = self.state_local.copy()
+        ftc = (
+            self.ftc_local.copy()
+            if self.IfFTC else np.zeros_like(state)
+        )
+
+        cut = np.zeros_like(ftc, dtype=bool)
+        if self.IfFTC and self.ftc_target == 0.0:
+            cut = ((ftc > 0.0) & (ftc <= 1e-8) & (slipv >= 0.0) & (slipv < self.ftc_Vtransition) & (slipv <= self.ftc_Vw[self.local_index]))
+
+        state[cut] -= ftc[cut]
+        ftc[cut] = 0.0
+
+        old_values = {
+            'Tno': Tno, 'slipv': slipv,
+            'state': state, 'ftc': ftc,
+        }
+        saved = getattr(self, '_rk_compensation', {})
+        residuals = {
+            name: (
+                saved[name].copy()
+                if name in saved and saved[name].shape == value.shape
+                else np.zeros_like(value)
+            )
+            for name, value in old_values.items()
+        }
+
+        residuals['ftc'][cut] = 0.0
+        residuals['state'][cut] = 0.0
+        trial_residuals = {}   #changed
+    
         def rk_add(name, increment):
             # Every stage starts from the same accepted value and residual.
             updated, residual = self._rk_compensated_add(
