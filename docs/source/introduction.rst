@@ -30,7 +30,7 @@ it a flexible and extensible platform for researchers, students, and educators
 interested in exploring the physics of earthquake cycles across a wide range 
 of spatial and temporal scales.
 
-PyQuake3D is developed and maintained by Rongjiang Tang and Luca Dal Zilio. 
+PyQuake3D is originally developed and maintained by Rongjiang Tang and Luca Dal Zilio. 
 The source code, documentation, and tutorials are hosted on GitHub:
 
     https://github.com/Computational-Geophysics/PyQuake3D
