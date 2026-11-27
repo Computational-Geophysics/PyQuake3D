@@ -104,7 +104,7 @@ For example:
 To execute benchmarks like BP5-QD, use:
 ```bash
 In the PyQuake3D root directory, To run the BP5-QD benchmark:
-mpirun -n 10 python -m pyquake3d.main_mpi -g para/BP5-QD/bp5t.msh -p examples/BP5-QD/parameter.txt
+mpirun -n 10 python -m pyquake3d.main_mpi -g para/BP5-QD/bp5t.msh -p para/BP5-QD/parameter.txt
 
 
 To run the HF-model:
